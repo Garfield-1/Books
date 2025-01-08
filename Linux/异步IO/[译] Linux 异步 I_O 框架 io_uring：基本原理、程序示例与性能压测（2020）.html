@@ -1,0 +1,1430 @@
+<!DOCTYPE html>
+<!-- saved from url=(0050)https://arthurchiao.art/blog/intro-to-io-uring-zh/ -->
+<html class="js flexbox canvas canvastext webgl no-touch geolocation postmessage no-websqldatabase indexeddb hashchange history draganddrop websockets rgba hsla multiplebgs backgroundsize borderimage borderradius boxshadow textshadow opacity cssanimations csscolumns cssgradients cssreflections csstransforms csstransforms3d csstransitions fontface generatedcontent video audio localstorage sessionstorage webworkers no-applicationcache svg inlinesvg smil svgclippaths js" data-redeviation-bs-uid="6enntjiv26u" style=""><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="">
+    <title>[译] Linux 异步 I/O 框架 io_uring：基本原理、程序示例与性能压测（2020）</title>
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="https://arthurchiao.art/assets/img/favicon.ico">
+
+    <!-- Come and get me RSS readers -->
+    <link rel="alternate" type="application/rss+xml" title="ArthurChiao&#39;s Blog" href="https://arthurchiao.github.io/feed.xml">
+    
+    <!-- Stylesheet -->
+    <link rel="stylesheet" href="./[译] Linux 异步 I_O 框架 io_uring：基本原理、程序示例与性能压测（2020）_files/style.css">
+    <link rel="stylesheet" href="./[译] Linux 异步 I_O 框架 io_uring：基本原理、程序示例与性能压测（2020）_files/github-markdown.css">
+    <link rel="stylesheet" href="./[译] Linux 异步 I_O 框架 io_uring：基本原理、程序示例与性能压测（2020）_files/rouge-syntax-github.css">
+
+    
+      <link rel="canonical" href="https://arthurchiao.github.io/blog/intro-to-io-uring-zh/">
+    
+
+    <!-- Modernizr -->
+    <script src="./[译] Linux 异步 I_O 框架 io_uring：基本原理、程序示例与性能压测（2020）_files/modernizr.custom.15390.js.下载" type="text/javascript"></script>
+<script async="" src="./[译] Linux 异步 I_O 框架 io_uring：基本原理、程序示例与性能压测（2020）_files/js"></script><script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-5SFP2TKSL7');
+</script><style class="redeviation-bs-style" data-name="content">/*! (c) Philipp Koenig under MS-RSL */
+body>div#redeviation-bs-indicator>div{opacity:0;pointer-events:none}body>#redeviation-bs-overlay.redeviation-bs-visible,body>#redeviation-bs-sidebar.redeviation-bs-visible{opacity:1;pointer-events:auto}body.redeviation-bs-noscroll{overflow:hidden !important}body>div#redeviation-bs-indicator>div{position:absolute;transform:translate3d(-24px, 0, 0);top:0;left:0;width:24px !important;height:100%;background:rgba(0,0,0,0.5);border-radius:0 10px 10px 0;transition:opacity .3s,transform .3s;z-index:2}body>div#redeviation-bs-indicator>div>span{-webkit-mask:no-repeat center/24px;-webkit-mask-image:url(chrome-extension://lmjefbghkfeppnpofmbfmhgodpclipbl/img/icon-bookmark.svg);background-color:#ffffff;position:absolute;display:block;top:0;left:0;width:100%;height:100%}body>div#redeviation-bs-indicator[data-pos=right]{left:auto;right:0}body>div#redeviation-bs-indicator[data-pos=right]>div{transform:translate3d(24px, 0, 0);left:auto;right:0;border-radius:10px 0 0 10px}body>div#redeviation-bs-indicator.redeviation-bs-fullHeight>div{border-radius:0}body>div#redeviation-bs-indicator.redeviation-bs-hover>div{transform:translate3d(0, 0, 0);opacity:1}body>div#redeviation-bs-indicator[data-pos=left].redeviation-bs-has-lsb{height:100% !important;top:0 !important}body>div#redeviation-bs-indicator[data-pos=left].redeviation-bs-has-lsb>div{background:rgba(0,0,0,0)}body>div#redeviation-bs-indicator[data-pos=left].redeviation-bs-has-lsb>div>span{-webkit-mask-position-y:20px}body>#redeviation-bs-sidebar{width:350px;max-width:none;height:0;z-index:2147483646;background-color:rgba(255, 255, 255, 0.8) !important;color-scheme:auto !important;speak:none;border:none;display:block !important;transform:translate3d(-350px, 0, 0);transition:width 0s .3s,height 0s .3s,opacity .3s,transform .3s}body>#redeviation-bs-sidebar[data-pos=right]{left:auto;right:0;transform:translate3d(350px, 0, 0)}body>#redeviation-bs-sidebar.redeviation-bs-visible{width:calc(100% + 350px);height:100%;transform:translate3d(0, 0, 0);transition:opacity .3s,transform .3s}body>#redeviation-bs-sidebar.sidepanel{width:100% !important}body>#redeviation-bs-sidebar.redeviation-bs-hideMask{background:none !important}body>#redeviation-bs-sidebar.redeviation-bs-hideMask:not(.redeviation-bs-hover){width:calc(350px + 50px)}body>#redeviation-bs-overlay{width:100%;max-width:none;height:100%;z-index:2147483647;border:none;speak:none;background:rgba(0, 0, 0, 0.5) !important;color-scheme:auto !important;transition:opacity .3s}</style></head>
+
+
+  
+    <!-- Google tag (gtag.js) -->
+
+
+
+  
+
+
+
+<body>
+   <div class="header">
+     <div class="container">
+         <h1 class="logo"><a href="https://arthurchiao.github.io/">ArthurChiao's Blog</a></h1>
+         <a href="https://arthurchiao.art/blog/intro-to-io-uring-zh/#" class="nav-toggle" aria-hidden="true">Menu</a><nav class="nav-collapse nav-collapse-0 closed" aria-hidden="false" style="transition: max-height 284ms; position: relative;">
+             <ul class="noList">
+                 
+                   
+                   
+                   <li class="element first  ">
+                     <a href="https://arthurchiao.art/index.html">Home</a>
+                   </li> 
+                 
+                   
+                   
+                   <li class="element   ">
+                     <a href="https://arthurchiao.art/articles">Articles (EN)</a>
+                   </li> 
+                 
+                   
+                   
+                   <li class="element   ">
+                     <a href="https://arthurchiao.art/articles-zh">Articles (中文)</a>
+                   </li> 
+                 
+                   
+                   
+                   <li class="element   ">
+                     <a href="https://arthurchiao.art/categories">Categories</a>
+                   </li> 
+                 
+                   
+                   
+                   <li class="element   ">
+                     <a href="https://arthurchiao.art/about">About</a>
+                   </li> 
+                 
+                   
+                   
+                   <li class="element   last">
+                     <a href="https://arthurchiao.art/donate">Donate</a>
+                   </li> 
+                 
+                 <!-- <li> <a href="https://github.com/arthurchiao/reading" target="_blank">Reading</a></li> -->
+                 <!-- <li> <a href="https://github.com/arthurchiao/" target="_blank">GitHub</a></li> -->
+             </ul>
+         </nav>
+     </div>
+ </div><!-- end .header -->
+
+
+  <div class="content">
+      <div class="markdown-body">
+          <div class="post">
+  
+  <h1 class="postTitle">[译] Linux 异步 I/O 框架 io_uring：基本原理、程序示例与性能压测（2020）</h1>
+  <p class="meta">Published at 2021-09-01 | Last Update 2021-11-19</p>
+  
+  <h3 id="译者序">译者序</h3>
+
+<p>本文组合翻译了以下两篇文章的干货部分，作为 <code class="language-plaintext highlighter-rouge">io_uring</code> 相关的入门参考：</p>
+
+<ul>
+  <li><a href="https://thenewstack.io/how-io_uring-and-ebpf-will-revolutionize-programming-in-linux">How io_uring and eBPF Will Revolutionize Programming in Linux</a>, ScyllaDB, 2020</li>
+  <li><a href="https://medium.com/oracledevs/an-introduction-to-the-io-uring-asynchronous-i-o-framework-fad002d7dfc1">An Introduction to the io_uring Asynchronous I/O Framework</a>, Oracle, 2020</li>
+</ul>
+
+<p><code class="language-plaintext highlighter-rouge">io_uring</code> 是 2019 年 <strong><mark>Linux 5.1</mark></strong> 内核首次引入的高性能
+<strong><mark>异步 I/O 框架</mark></strong>，能显著加速 I/O 密集型应用的性能。
+但如果你的应用<strong><mark>已经在使用</mark></strong> 传统 Linux AIO 了，<strong><mark>并且使用方式恰当</mark></strong>，
+那 <code class="language-plaintext highlighter-rouge">io_uring</code> <strong><mark>并不会带来太大的性能提升</mark></strong> —— 根据原文测试（以及我们
+自己的复现），即便打开高级特性，也只有 5%。除非你真的需要这 5% 的额外性能，否则
+<strong><mark>切换</mark></strong>成 <code class="language-plaintext highlighter-rouge">io_uring</code> <strong><mark>代价可能也挺大</mark></strong>，因为要
+<strong><mark>重写应用</mark></strong>来适配 <code class="language-plaintext highlighter-rouge">io_uring</code>（或者让依赖的平台或框架去适配，总之需要改代码）。</p>
+
+<p>既然性能跟传统 AIO 差不多，那为什么还称 <code class="language-plaintext highlighter-rouge">io_uring</code> 为革命性技术呢？</p>
+
+<ol>
+  <li>
+    <p>它首先和最大的贡献在于：<strong><mark>统一了 Linux 异步 I/O 框架</mark></strong>，</p>
+
+    <ul>
+      <li>Linux AIO <strong><mark>只支持 direct I/O</mark></strong> 模式的<strong><mark>存储文件</mark></strong>
+（storage file），而且主要用在<strong><mark>数据库这一细分领域</mark></strong>；</li>
+      <li><code class="language-plaintext highlighter-rouge">io_uring</code> 支持存储文件和网络文件（network sockets），也支持更多的异步系统调用
+（<code class="language-plaintext highlighter-rouge">accept/openat/stat/...</code>），而非仅限于 <code class="language-plaintext highlighter-rouge">read/write</code> 系统调用。</li>
+    </ul>
+  </li>
+  <li>
+    <p>在<strong><mark>设计上是真正的异步 I/O</mark></strong>，作为对比，Linux AIO 虽然也
+是异步的，但仍然可能会阻塞，某些情况下的行为也无法预测；</p>
+
+    <p>似乎之前 Windows 在这块反而是领先的，更多参考：</p>
+
+    <ul>
+      <li><a href="https://zhuanlan.zhihu.com/p/361955546">浅析开源项目之 io_uring</a>，“分步试存储”专栏，知乎</li>
+      <li><a href="https://stackoverflow.com/questions/13407542/is-there-really-no-asynchronous-block-i-o-on-linux">Is there really no asynchronous block I/O on Linux?</a>，stackoverflow</li>
+    </ul>
+  </li>
+  <li>
+    <p><strong><mark>灵活性和可扩展性</mark></strong>非常好，甚至能基于 <code class="language-plaintext highlighter-rouge">io_uring</code> 重写所有系统调用，而 Linux AIO 设计时就没考虑扩展性。</p>
+  </li>
+</ol>
+
+<p>eBPF 也算是异步框架（事件驱动），但与 <code class="language-plaintext highlighter-rouge">io_uring</code> 没有本质联系，二者属于不同子系统，
+并且在模型上有一个本质区别：</p>
+
+<ol>
+  <li><strong><mark>eBPF 对用户是透明的</mark></strong>，只需升级内核（到合适的版本），<strong><mark>应用程序无需任何改造</mark></strong>；</li>
+  <li><code class="language-plaintext highlighter-rouge">io_uring</code> 提供了<strong><mark>新的系统调用和用户空间 API</mark></strong>，因此<strong><mark>需要应用程序做改造</mark></strong>。</li>
+</ol>
+
+<p>eBPF 作为动态跟踪工具，能够更方便地排查和观测 <code class="language-plaintext highlighter-rouge">io_uring</code> 等模块在执行层面的具体问题。</p>
+
+<p>本文介绍 Linux 异步 I/O 的发展历史，<code class="language-plaintext highlighter-rouge">io_uring</code> 的原理和功能，
+并给出了一些<strong><mark>程序示例</mark></strong>和<strong><mark>性能压测</mark></strong>结果（我们在 5.10
+内核做了类似测试，结论与原文差不多）。</p>
+
+<blockquote>
+  <p>Ceph 代码上已经支持了 <code class="language-plaintext highlighter-rouge">io_uring</code>，但发行版在编译时没有打开这个配置，判断是否支持 io_uring
+<a href="https://github.com/ceph/ceph/blob/a67d1cf2a7a4031609a5d37baa01ffdfef80e993/src/blk/kernel/io_uring.cc#L256">直接返回的 <code class="language-plaintext highlighter-rouge">false</code></a>，
+因此想测试得自己重新编译。测试时的参考配置：</p>
+
+  <div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nv">$ </span><span class="nb">cat</span> /etc/ceph/ceph.conf
+<span class="o">[</span>osd]
+bluestore_ioring <span class="o">=</span> <span class="nb">true</span>
+...
+</code></pre></div>  </div>
+
+  <p>确认配置生效（这是只是随便挑一个 OSD）：</p>
+
+  <div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nv">$ </span>ceph config show osd.16 | <span class="nb">grep </span>ioring
+bluestore_ioring                       <span class="nb">true                                            </span>file
+</code></pre></div>  </div>
+
+  <p>还要去看下日志，是否因为检测 io_uring 失败而 fallback 回了 libaio。</p>
+</blockquote>
+
+<p><strong>由于译者水平有限，本文不免存在遗漏或错误之处。如有疑问，请查阅原文。</strong></p>
+
+<p>以下是译文。</p>
+
+<hr>
+
+<ul id="markdown-toc">
+  <li><a href="https://arthurchiao.art/blog/intro-to-io-uring-zh/#%E8%AF%91%E8%80%85%E5%BA%8F" id="markdown-toc-译者序">译者序</a></li>
+  <li><a href="https://arthurchiao.art/blog/intro-to-io-uring-zh/#1-linux-io-%E7%B3%BB%E7%BB%9F%E8%B0%83%E7%94%A8%E6%BC%94%E8%BF%9B" id="markdown-toc-1-linux-io-系统调用演进">1 Linux I/O 系统调用演进</a>    <ul>
+      <li><a href="https://arthurchiao.art/blog/intro-to-io-uring-zh/#11-%E5%9F%BA%E4%BA%8E-fd-%E7%9A%84%E9%98%BB%E5%A1%9E%E5%BC%8F-ioreadwrite" id="markdown-toc-11-基于-fd-的阻塞式-ioreadwrite">1.1 基于 fd 的阻塞式 I/O：<code class="language-plaintext highlighter-rouge">read()/write()</code></a></li>
+      <li><a href="https://arthurchiao.art/blog/intro-to-io-uring-zh/#12-%E9%9D%9E%E9%98%BB%E5%A1%9E%E5%BC%8F-ioselectpollepoll" id="markdown-toc-12-非阻塞式-ioselectpollepoll">1.2 非阻塞式 I/O：<code class="language-plaintext highlighter-rouge">select()/poll()/epoll()</code></a></li>
+      <li><a href="https://arthurchiao.art/blog/intro-to-io-uring-zh/#13-%E7%BA%BF%E7%A8%8B%E6%B1%A0%E6%96%B9%E5%BC%8F" id="markdown-toc-13-线程池方式">1.3 线程池方式</a></li>
+      <li><a href="https://arthurchiao.art/blog/intro-to-io-uring-zh/#14-direct-io%E6%95%B0%E6%8D%AE%E5%BA%93%E8%BD%AF%E4%BB%B6%E7%BB%95%E8%BF%87-page-cache" id="markdown-toc-14-direct-io数据库软件绕过-page-cache">1.4 Direct I/O（数据库软件）：绕过 page cache</a></li>
+      <li><a href="https://arthurchiao.art/blog/intro-to-io-uring-zh/#15-%E5%BC%82%E6%AD%A5-ioaio" id="markdown-toc-15-异步-ioaio">1.5 异步 IO（AIO）</a></li>
+      <li><a href="https://arthurchiao.art/blog/intro-to-io-uring-zh/#16-%E5%B0%8F%E7%BB%93" id="markdown-toc-16-小结">1.6 小结</a></li>
+    </ul>
+  </li>
+  <li><a href="https://arthurchiao.art/blog/intro-to-io-uring-zh/#2-io_uring" id="markdown-toc-2-io_uring">2 <code class="language-plaintext highlighter-rouge">io_uring</code></a>    <ul>
+      <li><a href="https://arthurchiao.art/blog/intro-to-io-uring-zh/#21-%E4%B8%8E-linux-aio-%E7%9A%84%E4%B8%8D%E5%90%8C" id="markdown-toc-21-与-linux-aio-的不同">2.1 与 Linux AIO 的不同</a></li>
+      <li><a href="https://arthurchiao.art/blog/intro-to-io-uring-zh/#22-%E5%8E%9F%E7%90%86%E5%8F%8A%E6%A0%B8%E5%BF%83%E6%95%B0%E6%8D%AE%E7%BB%93%E6%9E%84sqcqsqecqe" id="markdown-toc-22-原理及核心数据结构sqcqsqecqe">2.2 原理及核心数据结构：SQ/CQ/SQE/CQE</a></li>
+      <li><a href="https://arthurchiao.art/blog/intro-to-io-uring-zh/#23-%E5%B8%A6%E6%9D%A5%E7%9A%84%E5%A5%BD%E5%A4%84" id="markdown-toc-23-带来的好处">2.3 带来的好处</a></li>
+      <li><a href="https://arthurchiao.art/blog/intro-to-io-uring-zh/#24-%E4%B8%89%E7%A7%8D%E5%B7%A5%E4%BD%9C%E6%A8%A1%E5%BC%8F" id="markdown-toc-24-三种工作模式">2.4 三种工作模式</a></li>
+      <li><a href="https://arthurchiao.art/blog/intro-to-io-uring-zh/#25-io_uring-%E7%B3%BB%E7%BB%9F%E8%B0%83%E7%94%A8-api" id="markdown-toc-25-io_uring-系统调用-api">2.5 <code class="language-plaintext highlighter-rouge">io_uring</code> 系统调用 API</a>        <ul>
+          <li><a href="https://arthurchiao.art/blog/intro-to-io-uring-zh/#251-io_uring_setup" id="markdown-toc-251-io_uring_setup">2.5.1 <code class="language-plaintext highlighter-rouge">io_uring_setup()</code></a></li>
+          <li><a href="https://arthurchiao.art/blog/intro-to-io-uring-zh/#252-io_uring_register" id="markdown-toc-252-io_uring_register">2.5.2 <code class="language-plaintext highlighter-rouge">io_uring_register()</code></a>            <ul>
+              <li><a href="https://arthurchiao.art/blog/intro-to-io-uring-zh/#%E6%B3%A8%E5%86%8C%E7%9A%84%E7%BC%93%E5%86%B2%E5%8C%BAbuffer%E6%80%A7%E8%B4%A8" id="markdown-toc-注册的缓冲区buffer性质">注册的缓冲区（buffer）性质</a></li>
+              <li><a href="https://arthurchiao.art/blog/intro-to-io-uring-zh/#%E9%80%9A%E8%BF%87-eventfd-%E8%AE%A2%E9%98%85-completion-%E4%BA%8B%E4%BB%B6" id="markdown-toc-通过-eventfd-订阅-completion-事件">通过 <code class="language-plaintext highlighter-rouge">eventfd()</code> 订阅 completion 事件</a></li>
+            </ul>
+          </li>
+          <li><a href="https://arthurchiao.art/blog/intro-to-io-uring-zh/#253-io_uring_enter" id="markdown-toc-253-io_uring_enter">2.5.3 <code class="language-plaintext highlighter-rouge">io_uring_enter()</code></a></li>
+        </ul>
+      </li>
+      <li><a href="https://arthurchiao.art/blog/intro-to-io-uring-zh/#26-%E9%AB%98%E7%BA%A7%E7%89%B9%E6%80%A7" id="markdown-toc-26-高级特性">2.6 高级特性</a></li>
+      <li><a href="https://arthurchiao.art/blog/intro-to-io-uring-zh/#27-%E7%94%A8%E6%88%B7%E7%A9%BA%E9%97%B4%E5%BA%93-liburing" id="markdown-toc-27-用户空间库-liburing">2.7 用户空间库 <code class="language-plaintext highlighter-rouge">liburing</code></a></li>
+    </ul>
+  </li>
+  <li><a href="https://arthurchiao.art/blog/intro-to-io-uring-zh/#3-%E5%9F%BA%E4%BA%8E-liburing-%E7%9A%84%E7%A4%BA%E4%BE%8B%E5%BA%94%E7%94%A8" id="markdown-toc-3-基于-liburing-的示例应用">3 基于 liburing 的示例应用</a>    <ul>
+      <li><a href="https://arthurchiao.art/blog/intro-to-io-uring-zh/#31-io_uring-test" id="markdown-toc-31-io_uring-test">3.1 <code class="language-plaintext highlighter-rouge">io_uring-test</code></a>        <ul>
+          <li><a href="https://arthurchiao.art/blog/intro-to-io-uring-zh/#%E6%BA%90%E7%A0%81%E5%8F%8A%E6%B3%A8%E9%87%8A" id="markdown-toc-源码及注释">源码及注释</a></li>
+          <li><a href="https://arthurchiao.art/blog/intro-to-io-uring-zh/#%E5%85%B6%E4%BB%96%E8%AF%B4%E6%98%8E" id="markdown-toc-其他说明">其他说明</a></li>
+        </ul>
+      </li>
+      <li><a href="https://arthurchiao.art/blog/intro-to-io-uring-zh/#32-link-cp" id="markdown-toc-32-link-cp">3.2 <code class="language-plaintext highlighter-rouge">link-cp</code></a>        <ul>
+          <li><a href="https://arthurchiao.art/blog/intro-to-io-uring-zh/#io-chain" id="markdown-toc-io-chain">I/O chain</a></li>
+          <li><a href="https://arthurchiao.art/blog/intro-to-io-uring-zh/#%E6%BA%90%E7%A0%81%E5%8F%8A%E6%B3%A8%E9%87%8A-1" id="markdown-toc-源码及注释-1">源码及注释</a></li>
+          <li><a href="https://arthurchiao.art/blog/intro-to-io-uring-zh/#%E5%85%B6%E4%BB%96%E8%AF%B4%E6%98%8E-1" id="markdown-toc-其他说明-1">其他说明</a></li>
+        </ul>
+      </li>
+    </ul>
+  </li>
+  <li><a href="https://arthurchiao.art/blog/intro-to-io-uring-zh/#4-io_uring-%E6%80%A7%E8%83%BD%E5%8E%8B%E6%B5%8B%E5%9F%BA%E4%BA%8E-fio" id="markdown-toc-4-io_uring-性能压测基于-fio">4 <code class="language-plaintext highlighter-rouge">io_uring</code> 性能压测（基于 <code class="language-plaintext highlighter-rouge">fio</code>）</a>    <ul>
+      <li><a href="https://arthurchiao.art/blog/intro-to-io-uring-zh/#41-%E6%B5%8B%E8%AF%95%E7%8E%AF%E5%A2%83" id="markdown-toc-41-测试环境">4.1 测试环境</a></li>
+      <li><a href="https://arthurchiao.art/blog/intro-to-io-uring-zh/#42-%E5%9C%BA%E6%99%AF%E4%B8%80direct-io-1kb-%E9%9A%8F%E6%9C%BA%E8%AF%BB%E7%BB%95%E8%BF%87-page-cache" id="markdown-toc-42-场景一direct-io-1kb-随机读绕过-page-cache">4.2 场景一：direct I/O <code class="language-plaintext highlighter-rouge">1KB</code> 随机读（绕过 page cache）</a></li>
+      <li><a href="https://arthurchiao.art/blog/intro-to-io-uring-zh/#42-%E5%9C%BA%E6%99%AF%E4%BA%8Cbuffered-io-1kb-%E9%9A%8F%E6%9C%BA%E8%AF%BB%E6%95%B0%E6%8D%AE%E6%8F%90%E5%89%8D%E5%8A%A0%E8%BD%BD%E5%88%B0%E5%86%85%E5%AD%98100-hot-cache" id="markdown-toc-42-场景二buffered-io-1kb-随机读数据提前加载到内存100-hot-cache">4.2 场景二：buffered I/O <code class="language-plaintext highlighter-rouge">1KB</code> 随机读（数据提前加载到内存，100% hot cache）</a></li>
+      <li><a href="https://arthurchiao.art/blog/intro-to-io-uring-zh/#43-%E6%80%A7%E8%83%BD%E6%B5%8B%E8%AF%95%E5%B0%8F%E7%BB%93" id="markdown-toc-43-性能测试小结">4.3 性能测试小结</a></li>
+      <li><a href="https://arthurchiao.art/blog/intro-to-io-uring-zh/#44-scylladb-%E4%B8%8E-io_uring" id="markdown-toc-44-scylladb-与-io_uring">4.4 ScyllaDB 与 io_uring</a></li>
+    </ul>
+  </li>
+  <li><a href="https://arthurchiao.art/blog/intro-to-io-uring-zh/#5-ebpf" id="markdown-toc-5-ebpf">5 eBPF</a></li>
+  <li><a href="https://arthurchiao.art/blog/intro-to-io-uring-zh/#6-%E7%BB%93%E6%9D%9F%E8%AF%AD" id="markdown-toc-6-结束语">6 结束语</a></li>
+  <li><a href="https://arthurchiao.art/blog/intro-to-io-uring-zh/#%E5%8F%82%E8%80%83%E8%B5%84%E6%96%99" id="markdown-toc-参考资料">参考资料</a></li>
+</ul>
+
+<hr>
+
+<p>很多人可能还没意识到，Linux 内核在过去几年已经发生了一场革命。这场革命源于
+<strong><mark>两个激动人心的新接口</mark></strong>的引入：<strong><mark>eBPF 和 io_uring</mark></strong>。
+我们认为，二者将会完全<strong><mark>改变应用与内核交互的方式</mark></strong>，以及
+<strong><mark>应用开发者思考和看待内核的方式</mark></strong>。</p>
+
+<p>本文介绍 io_uring（我们在 ScyllaDB 中有 io_uring 的深入使用经验），并略微提及一下 eBPF。</p>
+
+<h1 id="1-linux-io-系统调用演进">1 Linux I/O 系统调用演进</h1>
+
+<h2 id="11-基于-fd-的阻塞式-ioreadwrite">1.1 基于 fd 的阻塞式 I/O：<code class="language-plaintext highlighter-rouge">read()/write()</code></h2>
+
+<p>作为大家最熟悉的读写方式，Linux 内核提供了<strong><mark>基于文件描述符的系统调用</mark></strong>，
+这些描述符指向的可能是<strong><mark>存储文件</mark></strong>（storage file），也可能是 <strong><mark>network sockets</mark></strong>：</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kt">ssize_t</span> <span class="nf">read</span><span class="p">(</span><span class="kt">int</span> <span class="n">fd</span><span class="p">,</span> <span class="kt">void</span> <span class="o">*</span><span class="n">buf</span><span class="p">,</span> <span class="kt">size_t</span> <span class="n">count</span><span class="p">);</span>
+<span class="kt">ssize_t</span> <span class="nf">write</span><span class="p">(</span><span class="kt">int</span> <span class="n">fd</span><span class="p">,</span> <span class="k">const</span> <span class="kt">void</span> <span class="o">*</span><span class="n">buf</span><span class="p">,</span> <span class="kt">size_t</span> <span class="n">count</span><span class="p">);</span>
+</code></pre></div></div>
+
+<p>二者称为<strong><mark>阻塞式系统调用</mark></strong>（blocking system calls），因为程序调用
+这些函数时会进入 sleep 状态，然后被调度出去（让出处理器），直到 I/O 操作完成：</p>
+
+<ul>
+  <li>如果数据在文件中，并且文件内容<strong><mark>已经缓存在 page cache 中</mark></strong>，调用会<strong><mark>立即返回</mark></strong>；</li>
+  <li>如果数据在另一台机器上，就需要通过网络（例如 TCP）获取，会阻塞一段时间；</li>
+  <li>如果数据在硬盘上，也会阻塞一段时间。</li>
+</ul>
+
+<p>但很容易想到，随着存储<strong><mark>设备越来越快，程序越来越复杂</mark></strong>，
+阻塞式（blocking）已经这种最简单的方式已经不适用了。</p>
+
+<h2 id="12-非阻塞式-ioselectpollepoll">1.2 非阻塞式 I/O：<code class="language-plaintext highlighter-rouge">select()/poll()/epoll()</code></h2>
+
+<p>阻塞式之后，出现了一些新的、非阻塞的系统调用，例如 <code class="language-plaintext highlighter-rouge">select()</code>、<code class="language-plaintext highlighter-rouge">poll()</code> 以及更新的 <code class="language-plaintext highlighter-rouge">epoll()</code>。
+应用程序在调用这些函数读写时不会阻塞，而是<strong><mark>立即返回</mark></strong>，返回的是一个
+<strong><mark>已经 ready 的文件描述符列表</mark></strong>。</p>
+
+<p align="center"><img src="./[译] Linux 异步 I_O 框架 io_uring：基本原理、程序示例与性能压测（2020）_files/epoll.png" width="50%" height="50%"></p>
+
+<p>但这种方式存在一个致命缺点：<strong><mark>只支持 network sockets 和 pipes</mark></strong> ——
+<code class="language-plaintext highlighter-rouge">epoll()</code> 甚至连 storage files 都不支持。</p>
+
+<h2 id="13-线程池方式">1.3 线程池方式</h2>
+
+<p>对于 storage I/O，经典的解决思路是 <a href="https://en.wikipedia.org/wiki/Thread_pool">thread pool</a>：
+主线程将 I/O 分发给 worker 线程，后者代替主线程进行阻塞式读写，主线程不会阻塞。</p>
+
+<p align="center"><img src="./[译] Linux 异步 I_O 框架 io_uring：基本原理、程序示例与性能压测（2020）_files/thread-pools.png" width="40%" height="40%"></p>
+
+<p>这种方式的问题是<strong><mark>线程上下文切换开销可能非常大</mark></strong>，后面性能压测会看到。</p>
+
+<h2 id="14-direct-io数据库软件绕过-page-cache">1.4 Direct I/O（数据库软件）：绕过 page cache</h2>
+
+<p>随后出现了更加灵活和强大的方式：<strong><mark>数据库软件</mark></strong>（database software）
+有时 <a href="https://www.scylladb.com/2018/07/26/how-scylla-data-cache-works"><mark>并不想使用操作系统的 page cache</mark></a>，
+而是希望打开一个文件后，<strong><mark>直接从设备读写这个文件</mark></strong>（direct access to the device）。
+这种方式称为<strong><mark>直接访问</mark></strong>（direct access）或<strong><mark>直接 I/O</mark></strong>（direct I/O），</p>
+
+<ul>
+  <li>需要指定 <strong><mark><code>O_DIRECT</code></mark></strong> flag；</li>
+  <li>需要<strong><mark>应用自己管理自己的缓存</mark></strong> —— 这正是数据库软件所希望的；</li>
+  <li>是 <strong><mark>zero-copy I/O</mark></strong>，因为应用的缓冲数据直接发送到设备，或者直接从设备读取。</li>
+</ul>
+
+<h2 id="15-异步-ioaio">1.5 异步 IO（AIO）</h2>
+
+<p>前面提到，随着存储设备越来越快，主线程和 worker 线性之间的上下文切换开销占比越来越高。
+现在市场上的一些设备，例如 <a href="https://pcper.com/2018/12/intels-optane-dc-persistent-memory-dimms-push-latency-closer-to-dram">Intel Optane</a>
+，<strong><mark>延迟已经低到和上下文切换一个量级</mark></strong>（微秒 <code class="language-plaintext highlighter-rouge">us</code>）。换个方式描述，
+更能让我们感受到这种开销：
+<strong><mark>上下文每切换一次，我们就少一次 dispatch I/O 的机会</mark></strong>。</p>
+
+<p>因此，Linux <strong><mark>2.6</mark></strong> 内核引入了异步 I/O（asynchronous I/O）接口，
+方便起见，本文简写为 <code class="language-plaintext highlighter-rouge">linux-aio</code>。AIO <strong><mark>原理</mark></strong>是很简单的：</p>
+
+<ul>
+  <li>用户通过 <code class="language-plaintext highlighter-rouge">io_submit()</code> 提交 I/O 请求，</li>
+  <li>过一会再调用 <code class="language-plaintext highlighter-rouge">io_getevents()</code> 来检查哪些 events 已经 ready 了。</li>
+  <li>使程序员<strong><mark>能编写完全异步的代码</mark></strong>。</li>
+</ul>
+
+<p>近期，<a href="https://lwn.net/Articles/742978/">Linux AIO 甚至支持了</a> <code class="language-plaintext highlighter-rouge">epoll()</code>：也就是说
+不仅能提交 storage I/O 请求，还能提交网络 I/O 请求。照这样发展下去，linux-aio
+<strong><mark>似乎能成为一个王者</mark></strong>。但由于它糟糕的演进之路，这个愿望几乎不可能实现了。
+我们从 <strong><mark>Linus 标志性的激烈言辞中就能略窥一斑</mark></strong>：</p>
+
+<blockquote>
+  <p>Reply to: <a href="https://lwn.net/Articles/671657/">to support opening files asynchronously</a></p>
+
+  <p><em>So I think this is ridiculously ugly.</em></p>
+
+  <p><em>AIO is a horrible ad-hoc design, with the main excuse being “other, less
+gifted people, made that design, and we are implementing it for compatibility
+because database people — who seldom have any shred of taste — actually use
+it”.</em></p>
+
+  <p>— Linus Torvalds (on lwn.net)</p>
+</blockquote>
+
+<p>首先，作为数据库从业人员，我们想借此机会为我们的没品（lack of taste）向 Linus 道歉。
+但更重要的是，我们要进一步解释一下<strong><mark>为什么 Linus 是对的</mark></strong>：Linux AIO 确实问题缠身，</p>
+
+<ol>
+  <li><strong><mark>只支持 <code>O_DIRECT</code> 文件</mark></strong>，因此<strong><mark>对常规的非数据库应用</mark></strong>
+  （normal, non-database applications）<strong><mark>几乎是无用的</mark></strong>；</li>
+  <li>接口在<strong><mark>设计时并未考虑扩展性</mark></strong>。虽然可以扩展 —— 我们也确实这么做了 —— 但每加一个东西都相当复杂；</li>
+  <li>虽然从<strong><mark>技术上说接口是非阻塞的</mark></strong>，但实际上有
+  <a href="https://lwn.net/Articles/724198"><mark>很多可能的原因都会导致它阻塞</mark></a>，而且引发的方式难以预料。</li>
+</ol>
+
+<h2 id="16-小结">1.6 小结</h2>
+
+<p>以上可以清晰地看出 Linux I/O 的演进：</p>
+
+<ul>
+  <li>最开始是同步（阻塞式）系统调用；</li>
+  <li>然后随着<strong><mark>实际需求和具体场景</mark></strong>，不断加入新的异步接口，还要保持与老接口的兼容和协同工作。</li>
+</ul>
+
+<p>另外也看到，在非阻塞式读写的问题上<strong><mark>并没有形成统一方案</mark></strong>：</p>
+
+<ol>
+  <li>Network socket 领域：添加一个异步接口，然后去轮询（poll）请求是否完成（readiness）；</li>
+  <li>Storage I/O 领域：<strong><mark>只针对某一细分领域</mark></strong>（数据库）在某一特定时期的需求，添加了一个定制版的异步接口。</li>
+</ol>
+
+<p><strong><mark>这就是 Linux I/O 的演进历史</mark></strong> —— 只着眼当前，出现一个问题就引入一种设计，而并没有多少前瞻性 —— 直到 <code class="language-plaintext highlighter-rouge">io_uring</code> 的出现。</p>
+
+<h1 id="2-io_uring">2 <code class="language-plaintext highlighter-rouge">io_uring</code></h1>
+
+<p>io_uring 来自资深内核开发者 Jens Axboe 的想法，他在 Linux I/O stack 领域颇有研究。
+从最早的 patch <a href="https://lwn.net/ml/linux-fsdevel/20181221192236.12866-9-axboe@kernel.dk">aio: support for IO polling</a>
+可以看出，这项工作始于一个很简单的观察：随着设备越来越快，
+<strong><mark>中断驱动（interrupt-driven）模式效率已经低于轮询模式</mark></strong>
+（polling for completions） —— 这也是高性能领域最常见的主题之一。</p>
+
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">io_uring</code> 的<strong><mark>基本逻辑与 linux-aio 是类似的</mark></strong>：提供两个接口，一个将
+I/O 请求提交到内核，一个从内核接收完成事件。</li>
+  <li>但随着开发深入，它逐渐变成了一个完全不同的接口：设计者开始从源头思考
+<strong><mark>如何支持完全异步的操作</mark></strong>。</li>
+</ul>
+
+<h2 id="21-与-linux-aio-的不同">2.1 与 Linux AIO 的不同</h2>
+
+<p><code class="language-plaintext highlighter-rouge">io_uring</code> 与 <code class="language-plaintext highlighter-rouge">linux-aio</code> 有着本质的不同：</p>
+
+<ol>
+  <li>
+    <p><strong><mark>在设计上是真正异步的</mark></strong>（truly asynchronous）。只要
+  设置了合适的 flag，它在<strong><mark>系统调用上下文中就只是将请求放入队列</mark></strong>，
+  不会做其他任何额外的事情，<strong><mark>保证了应用永远不会阻塞</mark></strong>。</p>
+  </li>
+  <li>
+    <p><strong><mark>支持任何类型的 I/O</mark></strong>：cached files、direct-access files 甚至 blocking sockets。</p>
+
+    <p>由于设计上就是异步的（async-by-design nature），因此<strong><mark>无需 poll+read/write 来处理 sockets</mark></strong>。
+ 只需提交一个阻塞式读（blocking read），请求完成之后，就会出现在 completion ring。</p>
+  </li>
+  <li>
+    <p><strong><mark>灵活、可扩展</mark></strong>：基于 <code class="language-plaintext highlighter-rouge">io_uring</code> 甚至能重写（re-implement）Linux 的每个系统调用。</p>
+  </li>
+</ol>
+
+<h2 id="22-原理及核心数据结构sqcqsqecqe">2.2 原理及核心数据结构：SQ/CQ/SQE/CQE</h2>
+
+<p>每个 io_uring 实例都有<strong><mark>两个环形队列</mark></strong>（ring），在内核和应用程序之间共享：</p>
+
+<ul>
+  <li><strong><mark>提交队列</mark></strong>：submission queue (SQ)</li>
+  <li><strong><mark>完成队列</mark></strong>：completion queue (CQ)</li>
+</ul>
+
+<p align="center"><img src="./[译] Linux 异步 I_O 框架 io_uring：基本原理、程序示例与性能压测（2020）_files/io_uring.png" width="60%" height="60%"></p>
+
+<p>这两个队列：</p>
+
+<ul>
+  <li>都是<strong><mark>单生产者、单消费者</mark></strong>，size 是 2 的幂次；</li>
+  <li>提供<strong><mark>无锁接口</mark></strong>（lock-less access interface），内部使用
+<strong><mark>内存屏障</mark></strong>做同步（coordinated with memory barriers）。</li>
+</ul>
+
+<p><strong><mark>使用方式</mark></strong>：</p>
+
+<ul>
+  <li>
+    <p>请求</p>
+
+    <ul>
+      <li>应用创建 SQ entries (SQE)，更新 SQ tail；</li>
+      <li>内核消费 SQE，更新 SQ head。</li>
+    </ul>
+  </li>
+  <li>
+    <p>完成</p>
+
+    <ul>
+      <li>内核为完成的一个或多个请求创建 CQ entries (CQE)，更新 CQ tail；</li>
+      <li>应用消费 CQE，更新 CQ head。</li>
+      <li>完成事件（completion events）可能以任意顺序到达，到总是与特定的 SQE 相关联的。</li>
+      <li>消费 CQE 过程无需切换到内核态。</li>
+    </ul>
+  </li>
+</ul>
+
+<h2 id="23-带来的好处">2.3 带来的好处</h2>
+
+<p><code class="language-plaintext highlighter-rouge">io_uring</code> 这种请求方式还有一个好处是：原来需要多次系统调用（读或写），现在变成批处理一次提交。</p>
+
+<p>还记得 Meltdown 漏洞吗？当时我还写了<a href="https://www.scylladb.com/2018/01/07/cost-of-avoiding-a-meltdown/">一篇文章</a>
+解释为什么我们的 Scylla NoSQL 数据库受影响很小：<code class="language-plaintext highlighter-rouge">aio</code> 已经将我们的 I/O 系统调用批处理化了。</p>
+
+<p><code class="language-plaintext highlighter-rouge">io_uring</code> <strong><mark>将这种批处理能力带给了</mark></strong> storage I/O 系统调用之外的
+<strong><mark>其他一些系统调用</mark></strong>，包括：</p>
+
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">read</code></li>
+  <li><code class="language-plaintext highlighter-rouge">write</code></li>
+  <li><code class="language-plaintext highlighter-rouge">send</code></li>
+  <li><code class="language-plaintext highlighter-rouge">recv</code></li>
+  <li><code class="language-plaintext highlighter-rouge">accept</code></li>
+  <li><code class="language-plaintext highlighter-rouge">openat</code></li>
+  <li><code class="language-plaintext highlighter-rouge">stat</code></li>
+  <li>专用的一些系统调用，例如 <code class="language-plaintext highlighter-rouge">fallocate</code></li>
+</ul>
+
+<p>此外，<code class="language-plaintext highlighter-rouge">io_uring</code> 使异步 I/O 的使用场景也不再仅限于数据库应用，<strong><mark>普通的
+非数据库应用也能用</mark></strong>。这一点值得重复一遍：</p>
+
+<blockquote>
+  <p>虽然 <code class="language-plaintext highlighter-rouge">io_uring</code> 与 <code class="language-plaintext highlighter-rouge">aio</code> 有一些相似之处，但它的<strong><mark>扩展性和架构是革命性的</mark></strong>：
+它<strong><mark>将异步操作的强大能力带给了所有应用</mark></strong>（及其开发者），而
+<strong><mark>不再仅限于是数据库应用这一细分领域</mark></strong>。</p>
+</blockquote>
+
+<p>我们的 CTO Avi Kivity 在 the Core C++ 2019 event 上 <a href="https://www.scylladb.com/2020/03/26/avi-kivity-at-core-c-2019">有一次关于 async 的分享</a>。
+核心点包括：<strong><mark>从延迟上来说</mark></strong>，</p>
+
+<ol>
+  <li>现代多核、多 CPU 设备，其内部本身就是一个基础网络；</li>
+  <li><strong><mark>CPU 之间</mark></strong>是另一个网络；</li>
+  <li><strong><mark>CPU 和磁盘 I/O 之间</mark></strong>又是一个网络。</li>
+</ol>
+
+<p>因此网络编程采用异步是明智的，而现在开发自己的应用也应该考虑异步。
+这<strong><mark>从根本上改变了 Linux 应用的设计方式</mark></strong>：</p>
+
+<ul>
+  <li>之前都是一段顺序代码流，需要系统调用时才执行系统调用，</li>
+  <li>现在需要思考一个文件是否 ready，因而自然地引入 event-loop，不断通过共享 buffer 提交请求和接收结果。</li>
+</ul>
+
+<h2 id="24-三种工作模式">2.4 三种工作模式</h2>
+
+<p>io_uring 实例可工作在三种模式：</p>
+
+<ol>
+  <li>
+    <p><strong><mark>中断驱动模式</mark></strong>（interrupt driven）</p>
+
+    <p><strong><mark>默认模式</mark></strong>。可通过 io_uring_enter() 提交 I/O 请求，然后直接检查 CQ 状态判断是否完成。</p>
+  </li>
+  <li>
+    <p><strong><mark>轮询模式</mark></strong>（polled）</p>
+
+    <p>Busy-waiting for an I/O completion，而不是通过异步 IRQ（Interrupt Request）接收通知。</p>
+
+    <p>这种模式需要文件系统（如果有）和块设备（block device）支持轮询功能。
+ 相比中断驱动方式，这种方式延迟更低（<a href="https://www.phoronix.com/scan.php?page=news_item&amp;px=Linux-io_uring-Fast-Efficient">连系统调用都省了</a>），
+ 但可能会消耗更多 CPU 资源。</p>
+
+    <p>目前，只有指定了 O_DIRECT flag 打开的文件描述符，才能使用这种模式。当一个读
+ 或写请求提交给轮询上下文（polled context）之后，应用（application）必须调用
+ <code class="language-plaintext highlighter-rouge">io_uring_enter()</code> 来轮询 CQ 队列，判断请求是否已经完成。</p>
+
+    <p>对一个 io_uring 实例来说，<strong><mark>不支持混合使用轮询和非轮询模式</mark></strong>。</p>
+  </li>
+  <li>
+    <p><strong><mark>内核轮询模式</mark></strong>（kernel polled）</p>
+
+    <p>这种模式中，会 <strong><mark>创建一个内核线程</mark></strong>（kernel thread）来执行 SQ 的轮询工作。</p>
+
+    <p>使用这种模式的 io_uring 实例， <strong><mark>应用无需切到到内核态</mark></strong> 就能触发（issue）I/O 操作。
+通过 SQ 来提交 SQE，以及监控 CQ 的完成状态，应用无需任何系统调用，就能提交和收割 I/O（submit and reap I/Os）。</p>
+
+    <p>如果内核线程的空闲时间超过了用户的配置值，它会通知应用，然后进入 idle 状态。
+这种情况下，应用必须调用 <code class="language-plaintext highlighter-rouge">io_uring_enter()</code> 来唤醒内核线程。如果 I/O 一直很繁忙，内核线性是不会 sleep 的。</p>
+  </li>
+</ol>
+
+<h2 id="25-io_uring-系统调用-api">2.5 <code class="language-plaintext highlighter-rouge">io_uring</code> 系统调用 API</h2>
+
+<p>有三个：</p>
+
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">io_uring_setup(2)</code></li>
+  <li><code class="language-plaintext highlighter-rouge">io_uring_register(2)</code></li>
+  <li><code class="language-plaintext highlighter-rouge">io_uring_enter(2)</code></li>
+</ul>
+
+<p>下面展开介绍。完整文档见 <a href="https://github.com/axboe/liburing/tree/master/man">manpage</a>。</p>
+
+<h3 id="251-io_uring_setup">2.5.1 <code class="language-plaintext highlighter-rouge">io_uring_setup()</code></h3>
+
+<p>执行异步 I/O 需要先<strong><mark>设置上下文</mark></strong>：</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kt">int</span> <span class="nf">io_uring_setup</span><span class="p">(</span><span class="n">u32</span> <span class="n">entries</span><span class="p">,</span> <span class="k">struct</span> <span class="n">io_uring_params</span> <span class="o">*</span><span class="n">p</span><span class="p">);</span>
+</code></pre></div></div>
+
+<p>这个系统调用</p>
+
+<ul>
+  <li><strong><mark>创建一个 SQ 和一个 CQ</mark></strong>，</li>
+  <li>queue size 至少 <code class="language-plaintext highlighter-rouge">entries</code> 个元素，</li>
+  <li>返回一个文件描述符，随后用于在这个 io_uring 实例上执行操作。</li>
+</ul>
+
+<p>SQ 和 CQ 在应用和内核之间共享，避免了在初始化和完成 I/O 时（initiating and completing I/O）拷贝数据。</p>
+
+<p>参数 p：</p>
+
+<ul>
+  <li>应用用来配置 io_uring，</li>
+  <li>内核返回的 SQ/CQ 配置信息也通过它带回来。</li>
+</ul>
+
+<p>io_uring_setup() 成功时返回一个文件描述符（fd）。应用随后可以将这个 fd 传给 mmap(2) 系统调用，来
+map the submission and completion queues 或者传给 to the io_uring_register() or io_uring_enter() system calls.</p>
+
+<h3 id="252-io_uring_register">2.5.2 <code class="language-plaintext highlighter-rouge">io_uring_register()</code></h3>
+
+<p>注册用于异步 I/O 的<strong><mark>文件或用户缓冲区</mark></strong>（files or user buffers）：</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kt">int</span> <span class="nf">io_uring_register</span><span class="p">(</span><span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">fd</span><span class="p">,</span> <span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">opcode</span><span class="p">,</span> <span class="kt">void</span> <span class="o">*</span><span class="n">arg</span><span class="p">,</span> <span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">nr_args</span><span class="p">);</span>
+</code></pre></div></div>
+
+<p>注册文件或用户缓冲区，使内核能<strong><mark>长时间持有对该文件在内核内部的数据结构引用</mark></strong>（internal kernel data structures associated with the files），
+或创建<strong><mark>应用内存的长期映射</mark></strong>（long term mappings of application memory associated with the buffers），
+这个操作只会在注册时执行一次，而不是每个 I/O 请求都会处理，因此减少了 
+per-I/O overhead。</p>
+
+<h4 id="注册的缓冲区buffer性质">注册的缓冲区（buffer）性质</h4>
+
+<ul>
+  <li>Registered buffers 将会<strong><mark>被锁定在内存中</mark></strong>（be locked in memory），并<strong><mark>计入用户的 RLIMIT_MEMLOCK</mark></strong> 资源限制。</li>
+  <li>此外，每个 buffer 有 <strong><mark>1GB 的大小限制</mark></strong>。</li>
+  <li>当前，buffers 必须是<strong><mark>匿名、非文件后端的内存</mark></strong>（anonymous,
+non-file-backed memory），例如 malloc(3) or mmap(2) with the MAP_ANONYMOUS
+flag set 返回的内存。</li>
+  <li>Huge pages 也是支持的。整个 huge page 都会被 pin 到内核，即使只用到了其中一部分。</li>
+  <li>已经注册的 buffer 无法调整大小，想调整只能先 unregister，再重新 register 一个新的。</li>
+</ul>
+
+<h4 id="通过-eventfd-订阅-completion-事件">通过 <code class="language-plaintext highlighter-rouge">eventfd()</code> 订阅 completion 事件</h4>
+
+<p>可以用 <code class="language-plaintext highlighter-rouge">eventfd(2)</code> 订阅 io_uring 实例的 completion events。
+将 eventfd 描述符通过这个系统调用注册就行了。</p>
+
+<blockquote>
+  <p>The credentials of the running application can be registered with io_uring which returns an id associated with
+those credentials. Applications wishing to share a ring between separate
+users/processes can pass in this credential id in the SQE personality field. If
+set, that particular SQE will be issued with these credentials.</p>
+</blockquote>
+
+<h3 id="253-io_uring_enter">2.5.3 <code class="language-plaintext highlighter-rouge">io_uring_enter()</code></h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kt">int</span> <span class="nf">io_uring_enter</span><span class="p">(</span><span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">fd</span><span class="p">,</span> <span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">to_submit</span><span class="p">,</span> <span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">min_complete</span><span class="p">,</span> <span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">flags</span><span class="p">,</span> <span class="n">sigset_t</span> <span class="o">*</span><span class="n">sig</span><span class="p">);</span>
+</code></pre></div></div>
+
+<p>这个系统调用用于初始化和完成（initiate and complete）I/O，使用共享的 SQ 和 CQ。
+单次调用同时执行：</p>
+
+<ol>
+  <li>提交新的 I/O 请求</li>
+  <li>等待 I/O 完成</li>
+</ol>
+
+<p>参数：</p>
+
+<ol>
+  <li><code class="language-plaintext highlighter-rouge">fd</code> 是 <code class="language-plaintext highlighter-rouge">io_uring_setup()</code> 返回的文件描述符；</li>
+  <li><code class="language-plaintext highlighter-rouge">to_submit</code> 指定了 SQ 中提交的 I/O 数量；</li>
+  <li>
+    <p>依据不同模式：</p>
+
+    <ul>
+      <li>默认模式，如果指定了 <code class="language-plaintext highlighter-rouge">min_complete</code>，会等待这个数量的 I/O 事件完成再返回；</li>
+      <li>
+        <p>如果 io_uring 是 polling 模式，这个参数表示：</p>
+
+        <ol>
+          <li>0：要求内核返回当前以及完成的所有 events，无阻塞；</li>
+          <li>非零：如果有事件完成，内核仍然立即返回；如果没有完成事件，内核会 poll，等待指定的次数完成，或者这个进程的时间片用完。</li>
+        </ol>
+      </li>
+    </ul>
+  </li>
+</ol>
+
+<p>注意：对于 interrupt driven I/O，<strong><mark>应用无需进入内核就能检查 CQ 的 event completions</mark></strong>。</p>
+
+<p><code class="language-plaintext highlighter-rouge">io_uring_enter()</code> 支持很多操作，包括：</p>
+
+<ul>
+  <li>Open, close, and stat files</li>
+  <li>Read and write into multiple buffers or pre-mapped buffers</li>
+  <li>Socket I/O operations</li>
+  <li>Synchronize file state</li>
+  <li>Asynchronously monitor a set of file descriptors</li>
+  <li>Create a timeout linked to a specific operation in the ring</li>
+  <li>Attempt to cancel an operation that is currently in flight</li>
+  <li>Create I/O chains</li>
+  <li>Ordered execution within a chain</li>
+  <li>Parallel execution of multiple chains</li>
+</ul>
+
+<p>当这个系统调用返回时，表示一定数量的 SEQ 已经被消费和提交了，此时可以安全的重用队列中的 SEQ。
+此时 IO 提交有可能还停留在异步上下文中，即实际上 SQE 可能还没有被提交 —— 不过
+用户不用关心这些细节 —— 当随后内核需要使用某个特定的 SQE 时，它已经复制了一份。</p>
+
+<h2 id="26-高级特性">2.6 高级特性</h2>
+
+<p><code class="language-plaintext highlighter-rouge">io_uring</code> 提供了一些用于特殊场景的高级特性：</p>
+
+<ol>
+  <li><strong><mark>File registration</mark></strong>（文件注册）：每次发起一个指定文件描述的操
+作，内核都需要<strong><mark>花费一些时钟周期</mark></strong>（cycles）<strong><mark>将文件描述符映射到内部表示</mark></strong>。
+对于那些<strong><mark>针对同一文件进行重复操作</mark></strong>的场景，<code class="language-plaintext highlighter-rouge">io_uring</code> 支持<strong><mark>提前注册这些文件</mark></strong>，后面直接查找就行了。</li>
+  <li><strong><mark>Buffer registration</mark></strong>（缓冲区注册）：与 file registration 类
+似，direct I/O 场景中，内核需要 map/unmap memory areas。<code class="language-plaintext highlighter-rouge">io_uring</code> 支持提前
+注册这些缓冲区（buffers）。</li>
+  <li><strong><mark>Poll ring</mark></strong>（轮询环形缓冲区）：对于非常快是设备，处理中断的开
+销是比较大的。<code class="language-plaintext highlighter-rouge">io_uring</code> 允许用户关闭中断，使用轮询模式。前面“三种工作模式”小节
+也介绍到了这一点。</li>
+  <li><strong><mark>Linked operations</mark></strong>（链接操作）：允许用户发送串联的请求。这两
+个请求同时提交，但后面的会等前面的处理完才开始执行。</li>
+</ol>
+
+<h2 id="27-用户空间库-liburing">2.7 用户空间库 <code class="language-plaintext highlighter-rouge">liburing</code></h2>
+
+<p><a href="https://github.com/axboe/liburing/"><code class="language-plaintext highlighter-rouge">liburing</code></a> 提供了一个简单的高层 API，
+可用于一些基本场景，应用程序避免了直接使用更底层的系统调用。
+此外，这个 API 还避免了一些重复操作的代码，如设置 io_uring 实例。</p>
+
+<p>举个例子，在 <code class="language-plaintext highlighter-rouge">io_uring_setup()</code> 的 manpage 描述中，调用这个系统调用获得一个 ring 文
+件描述符之后，应用必须调用 <code class="language-plaintext highlighter-rouge">mmap()</code> 来这样的逻辑需要一段略长的代码，而用
+<code class="language-plaintext highlighter-rouge">liburing</code> 的话，下面的函数已经将上述流程封装好了：</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kt">int</span> <span class="nf">io_uring_queue_init</span><span class="p">(</span><span class="kt">unsigned</span> <span class="n">entries</span><span class="p">,</span> <span class="k">struct</span> <span class="n">io_uring</span> <span class="o">*</span><span class="n">ring</span><span class="p">,</span> <span class="kt">unsigned</span> <span class="n">flags</span><span class="p">);</span>
+</code></pre></div></div>
+
+<p>下一节来看两个例子基于 liburing 的例子。</p>
+
+<h1 id="3-基于-liburing-的示例应用">3 基于 liburing 的示例应用</h1>
+
+<p>编译：</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nv">$ </span>git clone https://github.com/axboe/liburing.git
+<span class="nv">$ </span>git co <span class="nt">-b</span> liburing-2.0 tags/liburing-2.0
+
+<span class="nv">$ </span><span class="nb">cd </span>liburing
+<span class="nv">$ </span><span class="nb">ls </span>examples/
+io_uring-cp  io_uring-cp.c  io_uring-test  io_uring-test.c  link-cp  link-cp.c  Makefile  ucontext-cp  ucontext-cp.c
+
+<span class="nv">$ </span>make <span class="nt">-j4</span>
+
+<span class="nv">$ </span>./examples/io_uring-test &lt;file&gt;
+<span class="nv">Submitted</span><span class="o">=</span>4, <span class="nv">completed</span><span class="o">=</span>4, <span class="nv">bytes</span><span class="o">=</span>16384
+
+<span class="nv">$ </span>./examples/link-cp &lt;<span class="k">in</span><span class="nt">-file</span><span class="o">&gt;</span> &lt;out-file&gt;
+</code></pre></div></div>
+
+<h2 id="31-io_uring-test">3.1 <code class="language-plaintext highlighter-rouge">io_uring-test</code></h2>
+
+<p>这个程序使用 4 个 SQE，从输入文件中<strong><mark>读取最多 16KB 数据</mark></strong>。</p>
+
+<h3 id="源码及注释">源码及注释</h3>
+
+<p>为方便看清主要逻辑，忽略了一些错误处理代码，完整代码见
+<a href="https://github.com/axboe/liburing/blob/liburing-2.0/examples/io_uring-test.c">io_uring-test.c</a>。</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* SPDX-License-Identifier: MIT */</span>
+<span class="cm">/*
+ * Simple app that demonstrates how to setup an io_uring interface,
+ * submit and complete IO against it, and then tear it down.
+ *
+ * gcc -Wall -O2 -D_GNU_SOURCE -o io_uring-test io_uring-test.c -luring
+ */</span>
+<span class="cp">#include</span> <span class="cpf">"liburing.h"</span><span class="cp">
+</span>
+<span class="cp">#define QD    4 // io_uring 队列长度
+</span>
+<span class="kt">int</span> <span class="nf">main</span><span class="p">(</span><span class="kt">int</span> <span class="n">argc</span><span class="p">,</span> <span class="kt">char</span> <span class="o">*</span><span class="n">argv</span><span class="p">[])</span> <span class="p">{</span>
+    <span class="kt">int</span> <span class="n">i</span><span class="p">,</span> <span class="n">fd</span><span class="p">,</span> <span class="n">pending</span><span class="p">,</span> <span class="n">done</span><span class="p">;</span>
+    <span class="kt">void</span> <span class="o">*</span><span class="n">buf</span><span class="p">;</span>
+
+    <span class="c1">// 1. 初始化一个 io_uring 实例</span>
+    <span class="k">struct</span> <span class="n">io_uring</span> <span class="n">ring</span><span class="p">;</span>
+    <span class="n">ret</span> <span class="o">=</span> <span class="n">io_uring_queue_init</span><span class="p">(</span><span class="n">QD</span><span class="p">,</span>    <span class="c1">// 队列长度</span>
+                              <span class="o">&amp;</span><span class="n">ring</span><span class="p">,</span> <span class="c1">// io_uring 实例</span>
+                              <span class="mi">0</span><span class="p">);</span>    <span class="c1">// flags，0 表示默认配置，例如使用中断驱动模式</span>
+
+    <span class="c1">// 2. 打开输入文件，注意这里指定了 O_DIRECT flag，内核轮询模式需要这个 flag，见前面介绍</span>
+    <span class="n">fd</span> <span class="o">=</span> <span class="n">open</span><span class="p">(</span><span class="n">argv</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">O_RDONLY</span> <span class="o">|</span> <span class="n">O_DIRECT</span><span class="p">);</span>
+    <span class="k">struct</span> <span class="n">stat</span> <span class="n">sb</span><span class="p">;</span>
+    <span class="n">fstat</span><span class="p">(</span><span class="n">fd</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">sb</span><span class="p">);</span> <span class="c1">// 获取文件信息，例如文件长度，后面会用到</span>
+
+    <span class="c1">// 3. 初始化 4 个读缓冲区</span>
+    <span class="kt">ssize_t</span> <span class="n">fsize</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>             <span class="c1">// 程序的最大读取长度</span>
+    <span class="k">struct</span> <span class="n">iovec</span> <span class="o">*</span><span class="n">iovecs</span> <span class="o">=</span> <span class="n">calloc</span><span class="p">(</span><span class="n">QD</span><span class="p">,</span> <span class="k">sizeof</span><span class="p">(</span><span class="k">struct</span> <span class="n">iovec</span><span class="p">));</span>
+    <span class="k">for</span> <span class="p">(</span><span class="n">i</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="n">QD</span><span class="p">;</span> <span class="n">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">posix_memalign</span><span class="p">(</span><span class="o">&amp;</span><span class="n">buf</span><span class="p">,</span> <span class="mi">4096</span><span class="p">,</span> <span class="mi">4096</span><span class="p">))</span>
+            <span class="k">return</span> <span class="mi">1</span><span class="p">;</span>
+        <span class="n">iovecs</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">iov_base</span> <span class="o">=</span> <span class="n">buf</span><span class="p">;</span>  <span class="c1">// 起始地址</span>
+        <span class="n">iovecs</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">iov_len</span> <span class="o">=</span> <span class="mi">4096</span><span class="p">;</span>  <span class="c1">// 缓冲区大小</span>
+        <span class="n">fsize</span> <span class="o">+=</span> <span class="mi">4096</span><span class="p">;</span>
+    <span class="p">}</span>
+
+    <span class="c1">// 4. 依次准备 4 个 SQE 读请求，指定将随后读入的数据写入 iovecs </span>
+    <span class="k">struct</span> <span class="n">io_uring_sqe</span> <span class="o">*</span><span class="n">sqe</span><span class="p">;</span>
+    <span class="n">offset</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+    <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+    <span class="k">do</span> <span class="p">{</span>
+        <span class="n">sqe</span> <span class="o">=</span> <span class="n">io_uring_get_sqe</span><span class="p">(</span><span class="o">&amp;</span><span class="n">ring</span><span class="p">);</span>  <span class="c1">// 获取可用 SQE</span>
+        <span class="n">io_uring_prep_readv</span><span class="p">(</span><span class="n">sqe</span><span class="p">,</span>        <span class="c1">// 用这个 SQE 准备一个待提交的 read 操作</span>
+                            <span class="n">fd</span><span class="p">,</span>         <span class="c1">// 从 fd 打开的文件中读取数据</span>
+                            <span class="o">&amp;</span><span class="n">iovecs</span><span class="p">[</span><span class="n">i</span><span class="p">],</span> <span class="c1">// iovec 地址，读到的数据写入 iovec 缓冲区</span>
+                            <span class="mi">1</span><span class="p">,</span>          <span class="c1">// iovec 数量</span>
+                            <span class="n">offset</span><span class="p">);</span>    <span class="c1">// 读取操作的起始地址偏移量</span>
+        <span class="n">offset</span> <span class="o">+=</span> <span class="n">iovecs</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">iov_len</span><span class="p">;</span>    <span class="c1">// 更新偏移量，下次使用</span>
+        <span class="n">i</span><span class="o">++</span><span class="p">;</span>
+
+        <span class="k">if</span> <span class="p">(</span><span class="n">offset</span> <span class="o">&gt;</span> <span class="n">sb</span><span class="p">.</span><span class="n">st_size</span><span class="p">)</span>        <span class="c1">// 如果超出了文件大小，停止准备后面的 SQE</span>
+            <span class="k">break</span><span class="p">;</span>
+    <span class="p">}</span> <span class="k">while</span> <span class="p">(</span><span class="mi">1</span><span class="p">);</span>
+
+    <span class="c1">// 5. 提交 SQE 读请求</span>
+    <span class="n">ret</span> <span class="o">=</span> <span class="n">io_uring_submit</span><span class="p">(</span><span class="o">&amp;</span><span class="n">ring</span><span class="p">);</span>       <span class="c1">// 4 个 SQE 一次提交，返回提交成功的 SQE 数量</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">ret</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">)</span> <span class="p">{</span>
+        <span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span> <span class="s">"io_uring_submit: %s</span><span class="se">\n</span><span class="s">"</span><span class="p">,</span> <span class="n">strerror</span><span class="p">(</span><span class="o">-</span><span class="n">ret</span><span class="p">));</span>
+        <span class="k">return</span> <span class="mi">1</span><span class="p">;</span>
+    <span class="p">}</span> <span class="k">else</span> <span class="k">if</span> <span class="p">(</span><span class="n">ret</span> <span class="o">!=</span> <span class="n">i</span><span class="p">)</span> <span class="p">{</span>
+        <span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span> <span class="s">"io_uring_submit submitted less %d</span><span class="se">\n</span><span class="s">"</span><span class="p">,</span> <span class="n">ret</span><span class="p">);</span>
+        <span class="k">return</span> <span class="mi">1</span><span class="p">;</span>
+    <span class="p">}</span>
+
+    <span class="c1">// 6. 等待读请求完成（CQE）</span>
+    <span class="k">struct</span> <span class="n">io_uring_cqe</span> <span class="o">*</span><span class="n">cqe</span><span class="p">;</span>
+    <span class="n">done</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+    <span class="n">pending</span> <span class="o">=</span> <span class="n">ret</span><span class="p">;</span>
+    <span class="n">fsize</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+    <span class="k">for</span> <span class="p">(</span><span class="n">i</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="n">pending</span><span class="p">;</span> <span class="n">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+        <span class="n">io_uring_wait_cqe</span><span class="p">(</span><span class="o">&amp;</span><span class="n">ring</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">cqe</span><span class="p">);</span>  <span class="c1">// 等待系统返回一个读完成事件</span>
+        <span class="n">done</span><span class="o">++</span><span class="p">;</span>
+
+        <span class="k">if</span> <span class="p">(</span><span class="n">cqe</span><span class="o">-&gt;</span><span class="n">res</span> <span class="o">!=</span> <span class="mi">4096</span> <span class="o">&amp;&amp;</span> <span class="n">cqe</span><span class="o">-&gt;</span><span class="n">res</span> <span class="o">+</span> <span class="n">fsize</span> <span class="o">!=</span> <span class="n">sb</span><span class="p">.</span><span class="n">st_size</span><span class="p">)</span> <span class="p">{</span>
+            <span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span> <span class="s">"ret=%d, wanted 4096</span><span class="se">\n</span><span class="s">"</span><span class="p">,</span> <span class="n">cqe</span><span class="o">-&gt;</span><span class="n">res</span><span class="p">);</span>
+        <span class="p">}</span>
+
+        <span class="n">fsize</span> <span class="o">+=</span> <span class="n">cqe</span><span class="o">-&gt;</span><span class="n">res</span><span class="p">;</span>
+        <span class="n">io_uring_cqe_seen</span><span class="p">(</span><span class="o">&amp;</span><span class="n">ring</span><span class="p">,</span> <span class="n">cqe</span><span class="p">);</span>   <span class="c1">// 更新 io_uring 实例的完成队列</span>
+    <span class="p">}</span>
+
+    <span class="c1">// 7. 打印统计信息</span>
+    <span class="n">printf</span><span class="p">(</span><span class="s">"Submitted=%d, completed=%d, bytes=%lu</span><span class="se">\n</span><span class="s">"</span><span class="p">,</span> <span class="n">pending</span><span class="p">,</span> <span class="n">done</span><span class="p">,</span> <span class="p">(</span><span class="kt">unsigned</span> <span class="kt">long</span><span class="p">)</span> <span class="n">fsize</span><span class="p">);</span>
+
+    <span class="c1">// 8. 清理工作</span>
+    <span class="n">close</span><span class="p">(</span><span class="n">fd</span><span class="p">);</span>
+    <span class="n">io_uring_queue_exit</span><span class="p">(</span><span class="o">&amp;</span><span class="n">ring</span><span class="p">);</span>
+    <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<h3 id="其他说明">其他说明</h3>
+
+<p>代码中已经添加了注释，这里再解释几点：</p>
+
+<ul>
+  <li>每个 SQE 都执行一个 allocated buffer，后者是用 <code class="language-plaintext highlighter-rouge">iovec</code> 结构描述的；</li>
+  <li>第 3 &amp; 4 步：初始化所有 SQE，用于接下来的 <code class="language-plaintext highlighter-rouge">IORING_OP_READV</code> 操作，后者
+<strong><mark>提供了 <code>readv(2)</code> 系统调用的异步接口</mark></strong>。</li>
+  <li>操作完成之后，这个 SQE iovec buffer 中存放的是相关 <code class="language-plaintext highlighter-rouge">readv</code> 操作的结果；</li>
+  <li>接下来调用 <code class="language-plaintext highlighter-rouge">io_uring_wait_cqe()</code> 来 reap CQE，并通过 <code class="language-plaintext highlighter-rouge">cqe-&gt;res</code> 字段验证读取的字节数；</li>
+  <li><code class="language-plaintext highlighter-rouge">io_uring_cqe_seen()</code> 通知内核这个 CQE 已经被消费了。</li>
+</ul>
+
+<h2 id="32-link-cp">3.2 <code class="language-plaintext highlighter-rouge">link-cp</code></h2>
+
+<p>link-cp 使用 io_uring 高级特性 SQE chaining 特性来复制文件。</p>
+
+<h3 id="io-chain">I/O chain</h3>
+
+<p>io_uring 支持创建 I/O chain。一个 chain 内的 I/O 是顺序执行的，多个 I/O chain 可以并行执行。</p>
+
+<p><code class="language-plaintext highlighter-rouge">io_uring_enter()</code> manpage 中对 <code class="language-plaintext highlighter-rouge">IOSQE_IO_LINK</code> 有 <a href="https://www.mankier.com/2/io_uring_enter#Description-IOSQE_IO_LINK">详细解释</a>：</p>
+
+<blockquote>
+  <p>When this flag is specified, it forms a link with the next SQE in the
+submission ring. That next SQE will not be started before this one completes.
+This, in effect, forms a chain of SQEs, which can be arbitrarily long. The tail
+of the chain is denoted by the first SQE that does not have this flag set. This
+flag has no effect on previous SQE submissions, nor does it impact SQEs that
+are outside of the chain tail. This means that multiple chains can be executing
+in parallel, or chains and individual SQEs. Only members inside the chain are
+serialized. A chain of SQEs will be broken, if any request in that chain ends
+in error. io_uring considers any unexpected result an error. This means that,
+eg, a short read will also terminate the remainder of the chain. If a chain of
+SQE links is broken, the remaining unstarted part of the chain will be
+terminated and completed with -ECANCELED as the error code. Available since
+5.3.</p>
+</blockquote>
+
+<p>为实现复制文件功能，link-cp 创建一个长度为 2 的 SQE chain。</p>
+
+<ul>
+  <li>第一个 SQE 是一个读请求，将数据从输入文件读到 buffer；</li>
+  <li>第二个请求，与第一个请求是 linked，是一个写请求，将数据从 buffer 写入输出文件。</li>
+</ul>
+
+<h3 id="源码及注释-1">源码及注释</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* SPDX-License-Identifier: MIT */</span>
+<span class="cm">/*
+ * Very basic proof-of-concept for doing a copy with linked SQEs. Needs a
+ * bit of error handling and short read love.
+ */</span>
+<span class="cp">#include</span> <span class="cpf">"liburing.h"</span><span class="cp">
+</span>
+<span class="cp">#define QD    64         // io_uring 队列长度
+#define BS    (32*1024)
+</span>
+<span class="k">struct</span> <span class="n">io_data</span> <span class="p">{</span>
+    <span class="kt">size_t</span> <span class="n">offset</span><span class="p">;</span>
+    <span class="kt">int</span> <span class="n">index</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">iovec</span> <span class="n">iov</span><span class="p">;</span>
+<span class="p">};</span>
+
+<span class="k">static</span> <span class="kt">int</span> <span class="n">infd</span><span class="p">,</span> <span class="n">outfd</span><span class="p">;</span>
+<span class="k">static</span> <span class="kt">unsigned</span> <span class="n">inflight</span><span class="p">;</span>
+
+<span class="c1">// 创建一个 read-&gt;write SQE chain</span>
+<span class="k">static</span> <span class="kt">void</span> <span class="nf">queue_rw_pair</span><span class="p">(</span><span class="k">struct</span> <span class="n">io_uring</span> <span class="o">*</span><span class="n">ring</span><span class="p">,</span> <span class="kt">off_t</span> <span class="n">size</span><span class="p">,</span> <span class="kt">off_t</span> <span class="n">offset</span><span class="p">)</span> <span class="p">{</span>
+    <span class="k">struct</span> <span class="n">io_uring_sqe</span> <span class="o">*</span><span class="n">sqe</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">io_data</span> <span class="o">*</span><span class="n">data</span><span class="p">;</span>
+    <span class="kt">void</span> <span class="o">*</span><span class="n">ptr</span><span class="p">;</span>
+
+    <span class="n">ptr</span> <span class="o">=</span> <span class="n">malloc</span><span class="p">(</span><span class="n">size</span> <span class="o">+</span> <span class="k">sizeof</span><span class="p">(</span><span class="o">*</span><span class="n">data</span><span class="p">));</span>
+    <span class="n">data</span> <span class="o">=</span> <span class="n">ptr</span> <span class="o">+</span> <span class="n">size</span><span class="p">;</span>
+    <span class="n">data</span><span class="o">-&gt;</span><span class="n">index</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+    <span class="n">data</span><span class="o">-&gt;</span><span class="n">offset</span> <span class="o">=</span> <span class="n">offset</span><span class="p">;</span>
+    <span class="n">data</span><span class="o">-&gt;</span><span class="n">iov</span><span class="p">.</span><span class="n">iov_base</span> <span class="o">=</span> <span class="n">ptr</span><span class="p">;</span>
+    <span class="n">data</span><span class="o">-&gt;</span><span class="n">iov</span><span class="p">.</span><span class="n">iov_len</span> <span class="o">=</span> <span class="n">size</span><span class="p">;</span>
+
+    <span class="n">sqe</span> <span class="o">=</span> <span class="n">io_uring_get_sqe</span><span class="p">(</span><span class="n">ring</span><span class="p">);</span>                            <span class="c1">// 获取可用 SQE</span>
+    <span class="n">io_uring_prep_readv</span><span class="p">(</span><span class="n">sqe</span><span class="p">,</span> <span class="n">infd</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">data</span><span class="o">-&gt;</span><span class="n">iov</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">offset</span><span class="p">);</span>   <span class="c1">// 准备 read 请求</span>
+    <span class="n">sqe</span><span class="o">-&gt;</span><span class="n">flags</span> <span class="o">|=</span> <span class="n">IOSQE_IO_LINK</span><span class="p">;</span>                             <span class="c1">// 设置为 LINK 模式</span>
+    <span class="n">io_uring_sqe_set_data</span><span class="p">(</span><span class="n">sqe</span><span class="p">,</span> <span class="n">data</span><span class="p">);</span>                        <span class="c1">// 设置 data</span>
+
+    <span class="n">sqe</span> <span class="o">=</span> <span class="n">io_uring_get_sqe</span><span class="p">(</span><span class="n">ring</span><span class="p">);</span>                            <span class="c1">// 获取另一个可用 SQE</span>
+    <span class="n">io_uring_prep_writev</span><span class="p">(</span><span class="n">sqe</span><span class="p">,</span> <span class="n">outfd</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">data</span><span class="o">-&gt;</span><span class="n">iov</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">offset</span><span class="p">);</span> <span class="c1">// 准备 write 请求</span>
+    <span class="n">io_uring_sqe_set_data</span><span class="p">(</span><span class="n">sqe</span><span class="p">,</span> <span class="n">data</span><span class="p">);</span>                        <span class="c1">// 设置 data</span>
+<span class="p">}</span>
+
+<span class="c1">// 处理完成（completion）事件：释放 SQE 的内存缓冲区，通知内核已经消费了 CQE。</span>
+<span class="k">static</span> <span class="kt">int</span> <span class="nf">handle_cqe</span><span class="p">(</span><span class="k">struct</span> <span class="n">io_uring</span> <span class="o">*</span><span class="n">ring</span><span class="p">,</span> <span class="k">struct</span> <span class="n">io_uring_cqe</span> <span class="o">*</span><span class="n">cqe</span><span class="p">)</span> <span class="p">{</span>
+    <span class="k">struct</span> <span class="n">io_data</span> <span class="o">*</span><span class="n">data</span> <span class="o">=</span> <span class="n">io_uring_cqe_get_data</span><span class="p">(</span><span class="n">cqe</span><span class="p">);</span>       <span class="c1">// 获取 CQE</span>
+    <span class="n">data</span><span class="o">-&gt;</span><span class="n">index</span><span class="o">++</span><span class="p">;</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="n">cqe</span><span class="o">-&gt;</span><span class="n">res</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">)</span> <span class="p">{</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">cqe</span><span class="o">-&gt;</span><span class="n">res</span> <span class="o">==</span> <span class="o">-</span><span class="n">ECANCELED</span><span class="p">)</span> <span class="p">{</span>
+            <span class="n">queue_rw_pair</span><span class="p">(</span><span class="n">ring</span><span class="p">,</span> <span class="n">BS</span><span class="p">,</span> <span class="n">data</span><span class="o">-&gt;</span><span class="n">offset</span><span class="p">);</span>
+            <span class="n">inflight</span> <span class="o">+=</span> <span class="mi">2</span><span class="p">;</span>
+        <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+            <span class="n">printf</span><span class="p">(</span><span class="s">"cqe error: %s</span><span class="se">\n</span><span class="s">"</span><span class="p">,</span> <span class="n">strerror</span><span class="p">(</span><span class="n">cqe</span><span class="o">-&gt;</span><span class="n">res</span><span class="p">));</span>
+            <span class="n">ret</span> <span class="o">=</span> <span class="mi">1</span><span class="p">;</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="n">data</span><span class="o">-&gt;</span><span class="n">index</span> <span class="o">==</span> <span class="mi">2</span><span class="p">)</span> <span class="p">{</span>        <span class="c1">// read-&gt;write chain 完成，释放缓冲区内存</span>
+        <span class="kt">void</span> <span class="o">*</span><span class="n">ptr</span> <span class="o">=</span> <span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">)</span> <span class="n">data</span> <span class="o">-</span> <span class="n">data</span><span class="o">-&gt;</span><span class="n">iov</span><span class="p">.</span><span class="n">iov_len</span><span class="p">;</span>
+        <span class="n">free</span><span class="p">(</span><span class="n">ptr</span><span class="p">);</span>
+    <span class="p">}</span>
+
+    <span class="n">io_uring_cqe_seen</span><span class="p">(</span><span class="n">ring</span><span class="p">,</span> <span class="n">cqe</span><span class="p">);</span>  <span class="c1">// 通知内核已经消费了 CQE 事件</span>
+    <span class="k">return</span> <span class="n">ret</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="k">static</span> <span class="kt">int</span> <span class="nf">copy_file</span><span class="p">(</span><span class="k">struct</span> <span class="n">io_uring</span> <span class="o">*</span><span class="n">ring</span><span class="p">,</span> <span class="kt">off_t</span> <span class="n">insize</span><span class="p">)</span> <span class="p">{</span>
+    <span class="k">struct</span> <span class="n">io_uring_cqe</span> <span class="o">*</span><span class="n">cqe</span><span class="p">;</span>
+    <span class="kt">size_t</span> <span class="n">this_size</span><span class="p">;</span>
+    <span class="kt">off_t</span> <span class="n">offset</span><span class="p">;</span>
+
+    <span class="n">offset</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+    <span class="k">while</span> <span class="p">(</span><span class="n">insize</span><span class="p">)</span> <span class="p">{</span>                      <span class="c1">// 数据还没处理完</span>
+        <span class="kt">int</span> <span class="n">has_inflight</span> <span class="o">=</span> <span class="n">inflight</span><span class="p">;</span>      <span class="c1">// 当前正在进行中的 SQE 数量</span>
+        <span class="kt">int</span> <span class="n">depth</span><span class="p">;</span>  <span class="c1">// SQE 阈值，当前进行中的 SQE 数量（inflight）超过这个值之后，需要阻塞等待 CQE 完成</span>
+
+        <span class="k">while</span> <span class="p">(</span><span class="n">insize</span> <span class="o">&amp;&amp;</span> <span class="n">inflight</span> <span class="o">&lt;</span> <span class="n">QD</span><span class="p">)</span> <span class="p">{</span> <span class="c1">// 数据还没处理完，io_uring 队列也还没用完</span>
+            <span class="n">this_size</span> <span class="o">=</span> <span class="n">BS</span><span class="p">;</span>
+            <span class="k">if</span> <span class="p">(</span><span class="n">this_size</span> <span class="o">&gt;</span> <span class="n">insize</span><span class="p">)</span>       <span class="c1">// 最后一段数据不足 BS 大小</span>
+                <span class="n">this_size</span> <span class="o">=</span> <span class="n">insize</span><span class="p">;</span>
+
+            <span class="n">queue_rw_pair</span><span class="p">(</span><span class="n">ring</span><span class="p">,</span> <span class="n">this_size</span><span class="p">,</span> <span class="n">offset</span><span class="p">);</span> <span class="c1">// 创建一个 read-&gt;write chain，占用两个 SQE</span>
+            <span class="n">offset</span> <span class="o">+=</span> <span class="n">this_size</span><span class="p">;</span>
+            <span class="n">insize</span> <span class="o">-=</span> <span class="n">this_size</span><span class="p">;</span>
+            <span class="n">inflight</span> <span class="o">+=</span> <span class="mi">2</span><span class="p">;</span>                <span class="c1">// 正在进行中的 SQE 数量 +2</span>
+        <span class="p">}</span>
+
+        <span class="k">if</span> <span class="p">(</span><span class="n">has_inflight</span> <span class="o">!=</span> <span class="n">inflight</span><span class="p">)</span>     <span class="c1">// 如果有新创建的 SQE，</span>
+            <span class="n">io_uring_submit</span><span class="p">(</span><span class="n">ring</span><span class="p">);</span>        <span class="c1">// 就提交给内核</span>
+
+        <span class="k">if</span> <span class="p">(</span><span class="n">insize</span><span class="p">)</span>                       <span class="c1">// 如果还有 data 等待处理，</span>
+            <span class="n">depth</span> <span class="o">=</span> <span class="n">QD</span><span class="p">;</span>                   <span class="c1">// 阈值设置 SQ 的队列长度，即 SQ 队列用完才开始阻塞等待 CQE；</span>
+        <span class="k">else</span>                              <span class="c1">// data 处理已经全部提交，</span>
+            <span class="n">depth</span> <span class="o">=</span> <span class="mi">1</span><span class="p">;</span>                    <span class="c1">// 阈值设置为 1，即只要还有 SQE 未完成，就阻塞等待 CQE</span>
+
+        <span class="c1">// 下面这个 while 只有 SQ 队列用完或 data 全部提交之后才会执行到</span>
+        <span class="k">while</span> <span class="p">(</span><span class="n">inflight</span> <span class="o">&gt;=</span> <span class="n">depth</span><span class="p">)</span> <span class="p">{</span>       <span class="c1">// 如果所有 SQE 都已经用完，或者所有 data read-&gt;write 请求都已经提交</span>
+            <span class="n">io_uring_wait_cqe</span><span class="p">(</span><span class="n">ring</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">cqe</span><span class="p">);</span><span class="c1">// 等待内核 completion 事件</span>
+            <span class="n">handle_cqe</span><span class="p">(</span><span class="n">ring</span><span class="p">,</span> <span class="n">cqe</span><span class="p">);</span>        <span class="c1">// 处理 completion 事件：释放 SQE 内存缓冲区，通知内核 CQE 已消费</span>
+            <span class="n">inflight</span><span class="o">--</span><span class="p">;</span>                   <span class="c1">// 正在进行中的 SQE 数量 -1</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+
+    <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="k">static</span> <span class="kt">int</span> <span class="nf">setup_context</span><span class="p">(</span><span class="kt">unsigned</span> <span class="n">entries</span><span class="p">,</span> <span class="k">struct</span> <span class="n">io_uring</span> <span class="o">*</span><span class="n">ring</span><span class="p">)</span> <span class="p">{</span>
+    <span class="n">io_uring_queue_init</span><span class="p">(</span><span class="n">entries</span><span class="p">,</span> <span class="n">ring</span><span class="p">,</span> <span class="mi">0</span><span class="p">);</span>
+    <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="k">static</span> <span class="kt">int</span> <span class="nf">get_file_size</span><span class="p">(</span><span class="kt">int</span> <span class="n">fd</span><span class="p">,</span> <span class="kt">off_t</span> <span class="o">*</span><span class="n">size</span><span class="p">)</span> <span class="p">{</span>
+    <span class="k">struct</span> <span class="n">stat</span> <span class="n">st</span><span class="p">;</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="n">fstat</span><span class="p">(</span><span class="n">fd</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">st</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="k">return</span> <span class="o">-</span><span class="mi">1</span><span class="p">;</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">S_ISREG</span><span class="p">(</span><span class="n">st</span><span class="p">.</span><span class="n">st_mode</span><span class="p">))</span> <span class="p">{</span>
+        <span class="o">*</span><span class="n">size</span> <span class="o">=</span> <span class="n">st</span><span class="p">.</span><span class="n">st_size</span><span class="p">;</span>
+        <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
+    <span class="p">}</span> <span class="k">else</span> <span class="k">if</span> <span class="p">(</span><span class="n">S_ISBLK</span><span class="p">(</span><span class="n">st</span><span class="p">.</span><span class="n">st_mode</span><span class="p">))</span> <span class="p">{</span>
+        <span class="kt">unsigned</span> <span class="kt">long</span> <span class="kt">long</span> <span class="n">bytes</span><span class="p">;</span>
+
+        <span class="k">if</span> <span class="p">(</span><span class="n">ioctl</span><span class="p">(</span><span class="n">fd</span><span class="p">,</span> <span class="n">BLKGETSIZE64</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">bytes</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">)</span>
+            <span class="k">return</span> <span class="o">-</span><span class="mi">1</span><span class="p">;</span>
+
+        <span class="o">*</span><span class="n">size</span> <span class="o">=</span> <span class="n">bytes</span><span class="p">;</span>
+        <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
+    <span class="p">}</span>
+
+    <span class="k">return</span> <span class="o">-</span><span class="mi">1</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="kt">int</span> <span class="nf">main</span><span class="p">(</span><span class="kt">int</span> <span class="n">argc</span><span class="p">,</span> <span class="kt">char</span> <span class="o">*</span><span class="n">argv</span><span class="p">[])</span> <span class="p">{</span>
+    <span class="k">struct</span> <span class="n">io_uring</span> <span class="n">ring</span><span class="p">;</span>
+    <span class="kt">off_t</span> <span class="n">insize</span><span class="p">;</span>
+    <span class="kt">int</span> <span class="n">ret</span><span class="p">;</span>
+
+    <span class="n">infd</span> <span class="o">=</span> <span class="n">open</span><span class="p">(</span><span class="n">argv</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">O_RDONLY</span><span class="p">);</span>
+    <span class="n">outfd</span> <span class="o">=</span> <span class="n">open</span><span class="p">(</span><span class="n">argv</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span> <span class="n">O_WRONLY</span> <span class="o">|</span> <span class="n">O_CREAT</span> <span class="o">|</span> <span class="n">O_TRUNC</span><span class="p">,</span> <span class="mo">0644</span><span class="p">);</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="n">setup_context</span><span class="p">(</span><span class="n">QD</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">ring</span><span class="p">))</span>
+        <span class="k">return</span> <span class="mi">1</span><span class="p">;</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">get_file_size</span><span class="p">(</span><span class="n">infd</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">insize</span><span class="p">))</span>
+        <span class="k">return</span> <span class="mi">1</span><span class="p">;</span>
+
+    <span class="n">ret</span> <span class="o">=</span> <span class="n">copy_file</span><span class="p">(</span><span class="o">&amp;</span><span class="n">ring</span><span class="p">,</span> <span class="n">insize</span><span class="p">);</span>
+
+    <span class="n">close</span><span class="p">(</span><span class="n">infd</span><span class="p">);</span>
+    <span class="n">close</span><span class="p">(</span><span class="n">outfd</span><span class="p">);</span>
+    <span class="n">io_uring_queue_exit</span><span class="p">(</span><span class="o">&amp;</span><span class="n">ring</span><span class="p">);</span>
+    <span class="k">return</span> <span class="n">ret</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<h3 id="其他说明-1">其他说明</h3>
+
+<p>代码中实现了三个函数：</p>
+
+<ol>
+  <li>
+    <p><code class="language-plaintext highlighter-rouge">copy_file()</code>：高层复制循环逻辑；它会调用 <code class="language-plaintext highlighter-rouge">queue_rw_pair(ring, this_size, offset)</code> 来构造 SQE pair；
+  并通过一次 <code class="language-plaintext highlighter-rouge">io_uring_submit()</code> 调用将所有构建的 SQE pair 提交。</p>
+
+    <p>这个函数维护了一个最大 DQ 数量的 inflight SQE，只要数据 copy 还在进行中；否则，即数据已经全部读取完成，就开始等待和收割所有的 CQE。</p>
+  </li>
+  <li>
+    <p><code class="language-plaintext highlighter-rouge">queue_rw_pair()</code> 构造一个 read-write SQE pair.</p>
+
+    <p>read SQE 的 <code class="language-plaintext highlighter-rouge">IOSQE_IO_LINK</code> flag 表示开始一个 chain，write SQE 不用设置这个 flag，标志着这个 chain 的结束。
+ 用户 data 字段设置为同一个 data 描述符，并且在随后的 completion 处理中会用到。</p>
+  </li>
+  <li>
+    <p><code class="language-plaintext highlighter-rouge">handle_cqe()</code> 从 CQE 中提取之前由  <code class="language-plaintext highlighter-rouge">queue_rw_pair()</code> 保存的 data 描述符，并在描述符中记录处理进展（index）。</p>
+
+    <p>如果之前请求被取消，它还会重新提交 read-write pair。</p>
+
+    <p>一个 CQE pair 的两个 member 都处理完成之后（<code class="language-plaintext highlighter-rouge">index==2</code>），释放共享的 data descriptor。
+最后通知内核这个 CQE 已经被消费。</p>
+  </li>
+</ol>
+
+<h1 id="4-io_uring-性能压测基于-fio">4 <code class="language-plaintext highlighter-rouge">io_uring</code> 性能压测（基于 <code class="language-plaintext highlighter-rouge">fio</code>）</h1>
+
+<p><strong><mark>对于已经在使用 linux-aio 的应用</mark></strong>，例如 ScyllaDB，
+<strong><mark>不要期望换成 io_uring 之后能获得大幅的性能提升</mark></strong>，这是因为：
+<code class="language-plaintext highlighter-rouge">io_uring</code> 性能相关的底层机制与 <code class="language-plaintext highlighter-rouge">linux-aio</code> 并无本质不同（都是异步提交，轮询结果）。</p>
+
+<p>在此，本文也希望使读者明白：<code class="language-plaintext highlighter-rouge">io_uring</code> <strong><mark>首先和最重要的贡献</mark></strong>在于：
+<strong><mark>将 linux-aio 的所有优良特性带给了普罗大众</mark></strong>（而非局限于数据库这样的细分领域）。</p>
+
+<h2 id="41-测试环境">4.1 测试环境</h2>
+
+<p>本节使用 <code class="language-plaintext highlighter-rouge">fio</code> 测试 4 种模式：</p>
+
+<ol>
+  <li>synchronous reads</li>
+  <li><code class="language-plaintext highlighter-rouge">posix-aio</code> (implemented as a thread pool)</li>
+  <li><code class="language-plaintext highlighter-rouge">linux-aio</code></li>
+  <li><code class="language-plaintext highlighter-rouge">io_uring</code></li>
+</ol>
+
+<p>硬件：</p>
+
+<ul>
+  <li>NVMe 存储设备，物理极限能打到 <strong><mark>3.5M IOPS</mark></strong>。</li>
+  <li>8 核处理器</li>
+</ul>
+
+<h2 id="42-场景一direct-io-1kb-随机读绕过-page-cache">4.2 场景一：direct I/O <code class="language-plaintext highlighter-rouge">1KB</code> 随机读（绕过 page cache）</h2>
+
+<p>第一组测试中，我们希望所有的读请求都能<strong><mark>命中存储设备</mark></strong>（all reads
+to hit the storage），<strong><mark>完全绕开操作系统的页缓存</mark></strong>（page cache）。</p>
+
+<p>测试配置：</p>
+
+<ul>
+  <li>8 个 CPU 执行 72 <code class="language-plaintext highlighter-rouge">fio</code> job，</li>
+  <li>每个 job 随机读取 4 个文件，</li>
+  <li><code class="language-plaintext highlighter-rouge">iodepth=8</code>（number of I/O units to keep in flight against the file.）。</li>
+</ul>
+
+<p>这种配置<strong><mark>保证了 CPU 处于饱和状态</mark></strong>，便于观察 I/O 性能。
+如果 CPU 数量足够多，那每组测试都可能会打满设备带宽，结果对 I/O 压测就没意义了。</p>
+
+<p align="center">表 1. Direct I/O（绕过系统页缓存）：1KB 随机读，CPU 100% 下的 I/O 性能</p>
+
+<table width="100%">
+<tbody>
+<tr>
+<td style="text-align: center;"><strong>backend</strong></td>
+<td style="text-align: right;"><strong>IOPS</strong></td>
+<td style="text-align: right;"><strong>context switches</strong></td>
+<td style="text-align: right;"><strong>IOPS ±% vs io_uring</strong></td>
+</tr>
+<tr>
+<td style="text-align: center;">sync</td>
+<td style="text-align: right;">814,000</td>
+<td style="text-align: right;">27,625,004</td>
+<td style="text-align: right;"><span style="color: #ff0000;"><strong>-42.6%</strong></span></td>
+</tr>
+<tr>
+<td style="text-align: center;">posix-aio (thread pool)</td>
+<td style="text-align: right;">433,000</td>
+<td style="text-align: right;">64,112,335</td>
+<td style="text-align: right;"><span style="color: #ff0000;"><strong>-69.4%</strong></span></td>
+</tr>
+<tr>
+<td style="text-align: center;">linux-aio</td>
+<td style="text-align: right;">1,322,000</td>
+<td style="text-align: right;">10,114,149</td>
+<td style="text-align: right;"><span style="color: #ff0000;"><strong>-6.7%</strong></span></td>
+</tr>
+<tr>
+<td style="text-align: center;">io_uring (basic)</td>
+<td style="text-align: right;">1,417,000</td>
+<td style="text-align: right;">11,309,574</td>
+<td style="text-align: right;"><strong>—</strong></td>
+</tr>
+<tr>
+<td style="text-align: center;">io_uring (enhanced)</td>
+<td style="text-align: right;">1,486,000</td>
+<td style="text-align: right;">11,483,468</td>
+<td style="text-align: right;"><span style="color: #008000;"><strong>4.9%</strong></span></td>
+</tr>
+</tbody>
+</table>
+
+<p align="center"><img src="./[译] Linux 异步 I_O 框架 io_uring：基本原理、程序示例与性能压测（2020）_files/benchmark-1.png" width="65%" height="65%"></p>
+
+<p>几点分析：</p>
+
+<ol>
+  <li><code class="language-plaintext highlighter-rouge">io_uring</code> 相比 <code class="language-plaintext highlighter-rouge">linux-aio</code> 确实有一定提升，但并非革命性的。</li>
+  <li>开启高级特性，例如 buffer &amp; file registration 之后性能有进一步提升 —— 但也还
+没有到为了这些性能而重写整个应用的地步，除非你是搞数据库研发，想榨取硬件的最后一分性能。</li>
+  <li>
+    <p><code class="language-plaintext highlighter-rouge">io_uring</code> and <code class="language-plaintext highlighter-rouge">linux-aio</code> <strong><mark>都比同步 read 接口快 2 倍，而后者又比 posix-aio 快 2 倍</mark></strong> ——
+初看有点差异。但看看<strong><mark>上下文切换次数</mark></strong>，就不难理解为什么 posix-aio 这么慢了。</p>
+
+    <ul>
+      <li>同步 read 性能差是因为：在这种没有 page cache 的情况下，
+<strong><mark>每次 read 系统调用都会阻塞，因此就会涉及一次上下文切换</mark></strong>。</li>
+      <li><code class="language-plaintext highlighter-rouge">posix-aio</code> 性能更差是因为：不仅内核和应用程序之间要频繁上下文切换，线程池的<strong><mark>多个线程之间也在频繁切换</mark></strong>。</li>
+    </ul>
+  </li>
+</ol>
+
+<h2 id="42-场景二buffered-io-1kb-随机读数据提前加载到内存100-hot-cache">4.2 场景二：buffered I/O <code class="language-plaintext highlighter-rouge">1KB</code> 随机读（数据提前加载到内存，100% hot cache）</h2>
+
+<p>第二组测试 buffered I/O：</p>
+
+<ol>
+  <li>
+    <p>将文件数据提前加载到内存，然后再测随机读。</p>
+
+    <ul>
+      <li>由于<strong><mark>数据全部在 page cache</mark></strong>，因此<strong><mark>同步 read 永远不会阻塞</mark></strong>。</li>
+      <li>这种场景下，我们预期<strong><mark>同步读和 io_uring 的性能差距不大（都是最好的）</mark></strong>。</li>
+    </ul>
+  </li>
+  <li>
+    <p>其他测试条件不变。</p>
+  </li>
+</ol>
+
+<p align="center">表 2. Buffered I/O（数据全部来自 page cache，<mark>100% hot cache</mark>）：1KB 随机读，100% CPU 下的 I/O 性能</p>
+
+<table width="100%">
+<tbody>
+<tr>
+<td><strong>Backend</strong></td>
+<td style="text-align: right;"><strong>IOPS</strong></td>
+<td style="text-align: right;"><strong>context switches</strong></td>
+<td style="text-align: right;"><strong>IOPS ±% vs io_uring</strong></td>
+</tr>
+<tr>
+<td>sync</td>
+<td style="text-align: right;">4,906,000</td>
+<td style="text-align: right;">&nbsp;105,797</td>
+<td style="text-align: right;"><span style="color: #ff0000;"><strong>-2.3%</strong></span></td>
+</tr>
+<tr>
+<td>posix-aio (thread pool)</td>
+<td style="text-align: right;">1,070,000</td>
+<td style="text-align: right;">114,791,187</td>
+<td style="text-align: right;"><span style="color: #ff0000;"><strong>-78.7%</strong></span></td>
+</tr>
+<tr>
+<td>linux-aio</td>
+<td style="text-align: right;">4,127,000</td>
+<td style="text-align: right;">105,052</td>
+<td style="text-align: right;"><span style="color: #ff0000;"><strong>-17.9%</strong></span></td>
+</tr>
+<tr>
+<td>io_uring</td>
+<td style="text-align: right;">5,024,000</td>
+<td style="text-align: right;">106,683</td>
+<td style="text-align: right;"><strong>—</strong></td>
+</tr>
+</tbody>
+</table>
+
+<p align="center"><img src="./[译] Linux 异步 I_O 框架 io_uring：基本原理、程序示例与性能压测（2020）_files/benchmark-2.png" width="65%" height="65%"></p>
+
+<p>结果分析：</p>
+
+<ol>
+  <li>
+    <p>同步读和 <code class="language-plaintext highlighter-rouge">io_uring</code> 性能差距确实很小，二者都是最好的。</p>
+
+    <p>但注意，<strong><mark>实际的应用</mark></strong>不可能一直 100% 时间执行 IO 操作，因此
+基于同步读的真实应用性能<strong><mark>还是要比基于 io_uring 要差的</mark></strong>，因为 io_uring 会将多个系统调用批处理化。</p>
+  </li>
+  <li>
+    <p><code class="language-plaintext highlighter-rouge">posix-aio</code> 性能最差，直接原因是<strong><mark>上下文切换次数太多</mark></strong>，这也和场景相关：
+在这种 <strong><mark>CPU 饱和的情况下</mark></strong>，它的线程池反而是累赘，会完全拖慢性能。</p>
+  </li>
+  <li>
+    <p><code class="language-plaintext highlighter-rouge">linux-aio</code> 并<strong><mark>不是针对 buffered I/O 设计的</mark></strong>，在这种 page cache 直接返回的场景，
+它的<strong><mark>异步接口反而会造成性能损失</mark></strong> —— 将操作分
+为 dispatch 和 consume 两步不但没有性能收益，反而有额外开销。</p>
+  </li>
+</ol>
+
+<h2 id="43-性能测试小结">4.3 性能测试小结</h2>
+
+<p>最后再次提醒，本节是极端应用/场景（<strong><mark>100% CPU + 100% cache miss/hit</mark></strong>）测试，
+真实应用的行为通常处于同步读和异步读之间：时而一些阻塞操作，时而一些非阻塞操作。
+但不管怎么说，用了 io_uring 之后，用户就无需担心同步和异步各占多少比例了，因为它<strong><mark>在任何场景下都表现良好</mark></strong>。</p>
+
+<ol>
+  <li>如果操作是非阻塞的，<code class="language-plaintext highlighter-rouge">io_uring</code> 不会有额外开销；</li>
+  <li>如果操作是阻塞式的，也没关系，<code class="language-plaintext highlighter-rouge">io_uring</code> 是完全异步的，并且不依赖线程池或昂贵的上下文切换来实现这种异步能力；</li>
+</ol>
+
+<p>本文测试的都是随机读，但对<strong><mark>其他类型的操作</mark></strong>，<code class="language-plaintext highlighter-rouge">io_uring</code> 表现也是非常良好的。例如：</p>
+
+<ol>
+  <li>打开/关闭文件</li>
+  <li>设置定时器</li>
+  <li>通过 network sockets 传输数据</li>
+</ol>
+
+<p>而且<strong><mark>使用的是同一套 io_uring 接口</mark></strong>。</p>
+
+<h2 id="44-scylladb-与-io_uring">4.4 ScyllaDB 与 io_uring</h2>
+
+<p>Scylla 重度依赖 direct I/O，从一开始就使用 <code class="language-plaintext highlighter-rouge">linux-aio</code>。
+在我们转向 <code class="language-plaintext highlighter-rouge">io_uring</code> 的过程中，最开始测试显示对某些 workloads，能取得 50% 以上的性能提升。
+但<strong><mark>深入研究之后发现</mark></strong>，这是因为我们<strong><mark>之前的 linux-aio 用的不够好</mark></strong>。
+这也揭示了一个<strong><mark>经常被忽视的事实</mark></strong>：获得高性能没有那么难（前提是你得弄对了）。
+在对比 <code class="language-plaintext highlighter-rouge">io_uring</code> 和 <code class="language-plaintext highlighter-rouge">linux-aio</code> 应用之后，我们<strong><mark>很快改进了一版，二者的性能差距就消失了</mark></strong>。
+但坦率地说，解决这个问题<strong><mark>需要一些工作量</mark></strong>，因为要改动一个已经使用
+了很多年的基于 <code class="language-plaintext highlighter-rouge">linux-aio</code> 的接口。而对 <code class="language-plaintext highlighter-rouge">io_uring</code> 应用来说，做类似的改动是轻而
+易举的。</p>
+
+<p>以上只是一个场景，<code class="language-plaintext highlighter-rouge">io_uring</code> 相比 <code class="language-plaintext highlighter-rouge">linux-aio</code> 的<strong><mark>优势</mark></strong>是能应用于 file I/O 之外的场景。
+此外，它还自带了特殊的 <a href="https://www.p99conf.io/">高性能</a> 接口，例如
+buffer registration、file registration、轮询模式等等。</p>
+
+<p>启用 <code class="language-plaintext highlighter-rouge">io_uring</code> 高级特性之后，我们看到性能确实有提升：Intel Optane 设备，单个
+CPU  读取 512 字节，观察到 5% 的性能提升。与 表 1 &amp; 2 对得上。虽然 5% 的提升
+看上去不是太大，但对于希望压榨出硬件所有性能的数据库来说，还是非常宝贵的。</p>
+
+<table width="100%">
+ <tbody>
+   <tr>
+   <td style="vertical-align: top; width: 50%;">
+   <mark>linux-aio:</mark>
+     <p>
+     Throughput         :      330 MB/s<br>
+     Lat average        :     1549 usec<br>
+     Lat quantile=  0.5 :     1547 usec<br>
+     Lat quantile= 0.95 :     1694 usec<br>
+     Lat quantile= 0.99 :     1703 usec<br>
+     Lat quantile=0.999 :     1950 usec<br>
+     Lat max            :     2177 usec
+     </p>
+   </td>
+   <td style="vertical-align: top; width: 50%;">
+
+   <mark>io_uring, with buffer and file registration and poll:</mark>
+   
+     <p>
+     Throughput         :      346 MB/s<br>
+     Lat average        :     1470 usec<br>
+     Lat quantile= 0.5  :     1468 usec<br>
+     Lat quantile= 0.95 :     1558 usec<br>
+     Lat quantile= 0.99 :     1613 usec<br>
+     Lat quantile=0.999 :     1674 usec<br>
+     Lat max            :     1829 usec
+     </p>
+   </td>
+   </tr>
+   <tr>
+   <td colspan="2">使用 1 个 CPU 从 Intel Optane 设备读取 512 字节。1000 并发请求。linux-aio 和 io_uring basic interface 性能差异很小。
+   但启用 io_uring 高级特性后，有 5% 的性能差距。</td>
+   </tr>
+ </tbody>
+</table>
+
+<h1 id="5-ebpf">5 eBPF</h1>
+
+<p>eBPF 也是一个<strong><mark>事件驱动框架</mark></strong>（因此也是异步的），允许用户空间程序动态向内核注入字节码，主要有两个使用场景：</p>
+
+<ol>
+  <li>Networking：<a href="https://arthurchiao.art/">本站</a> 已经有相当多的文章</li>
+  <li>Tracing &amp; Observability：例如 <a href="https://github.com/iovisor/bcc">bcc</a> 等工具</li>
+</ol>
+
+<p>eBPF 在内核  4.9 首次引入，4.19 以后功能已经很强大。更多关于 eBPF 的演进信息，可参考：
+<a href="https://arthurchiao.art/blog/ebpf-and-k8s-zh/"><mark>（译）大规模微服务利器：eBPF + Kubernetes（KubeCon, 2020）</mark></a>。</p>
+
+<p>谈到与 io_uring 的结合，就是用 bcc 之类的工具跟踪一些 I/O 相关的内核函数，例如：</p>
+
+<ol>
+  <li>Trace how much time an application spends sleeping, and what led to those sleeps. (<code class="language-plaintext highlighter-rouge">wakeuptime</code>)</li>
+  <li>Find all programs in the system that reached a particular place in the code (<code class="language-plaintext highlighter-rouge">trace</code>)</li>
+  <li>Analyze network TCP throughput aggregated by subnet (<code class="language-plaintext highlighter-rouge">tcpsubnet</code>)</li>
+  <li>Measure how much time the kernel spent processing softirqs (<code class="language-plaintext highlighter-rouge">softirqs</code>)</li>
+  <li>Capture information about all short-lived files, where they come from, and for how long they were opened (<code class="language-plaintext highlighter-rouge">filelife</code>)</li>
+</ol>
+
+<h1 id="6-结束语">6 结束语</h1>
+
+<p><code class="language-plaintext highlighter-rouge">io_uring</code> 和 eBPF 这两大特性<strong><mark>将给 Linux 编程带来革命性的变化</mark></strong>。
+有了这两个特性的加持，开发者就能更充分地利用 <a href="https://www.scylladb.com/2019/05/28/aws-new-i3en-meganode">Amazon i3en meganode systems</a>
+之类的多核/多处理器系统，以及 <a href="https://www.scylladb.com/2017/09/27/intel-optane-scylla-providing-speed-memory-database-persistency">Intel Optane 持久存储</a>
+之类的 <code class="language-plaintext highlighter-rouge">us</code> 级延迟存储设备。</p>
+
+<h1 id="参考资料">参考资料</h1>
+
+<ul>
+  <li><a href="https://kernel.dk/io_uring.pdf">Efficient IO with io_uring</a>, pdf</li>
+  <li><a href="https://lwn.net/Articles/776703/">Ringing in a new asynchronous I/O API</a>, lwn.net</li>
+  <li><a href="https://lwn.net/Articles/810414/">The rapid growth of io_uring</a>, lwn.net</li>
+  <li><a href="https://github.com/axboe/liburing/tree/master/man">System call API</a>, manpage</li>
+</ul>
+
+
+  <!-- POST NAVIGATION -->
+  <div class="postNav clearfix">
+     
+      <a class="prev" href="https://arthurchiao.art/blog/linux-socket-filtering-aka-bpf-zh/"><span>«&nbsp;[译] Linux Socket Filtering (LSF, aka BPF)（KernelDoc，2021）</span>
+      
+    </a>
+      
+      
+      <a class="next" href="https://arthurchiao.art/blog/cgroupv2-zh/"><span>[译] Control Group v2（cgroupv2 权威指南）（KernelDoc, 2021）&nbsp;»</span>
+       
+      </a>
+     
+  </div>
+</div>
+
+
+          
+
+      </div>
+  </div>
+
+  <div class="footer">
+   <div class="container">
+      <p class="copy">© 2016-2024
+      <a href="https://arthurchiao.art/about">Arthur Chiao</a>, Powered by
+      <a href="http://jekyllrb.com/">Jekyll</a>, customized
+      <a href="https://github.com/brianmaierjr/long-haul"> Long Haul.</a>
+
+      <script async="" src="https://busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script>
+      <span id="busuanzi_container_site_pv"> Site visits:
+          <span id="busuanzi_value_site_pv"></span>, powered by<a href="http://busuanzi.ibruce.info/"> busuanzi</a>
+      </span>
+
+      </p>
+
+      <div class="footer-links"> 
+         <ul class="noList"> 
+            
+            <li><a href="https://www.facebook.com/profile.php?id=100014334455077">
+                  <svg id="facebook-square" class="custom-icon" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 100 100" style="height: 30px; width: 30px;"><circle class="outer-shape" cx="50" cy="50" r="48" style="opacity: 1;"></circle>
+                  <path class="inner-shape" style="opacity: 1;" transform="translate(25,25) scale(0.5)" d="M82.667,1H17.335C8.351,1,1,8.351,1,17.336v65.329c0,8.99,7.351,16.335,16.334,16.335h65.332 C91.652,99.001,99,91.655,99,82.665V17.337C99,8.353,91.652,1.001,82.667,1L82.667,1z M84.318,50H68.375v42.875H50V50h-8.855V35.973 H50v-9.11c0-12.378,5.339-19.739,19.894-19.739h16.772V22.3H72.967c-4.066-0.007-4.57,2.12-4.57,6.078l-0.023,7.594H86.75 l-2.431,14.027V50z"></path>
+                  </svg>
+            </a></li>
+            
+            
+            <li><a href="https://linkedin.com/in/yanan-zhao-7691317b?trk=hp-identity-photo">
+                  <svg id="linkedin" class="custom-icon" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 100 100" style="height: 30px; width: 30px;"><circle class="outer-shape" cx="50" cy="50" r="48" style="opacity: 1;"></circle>
+                  <path class="inner-shape" style="opacity: 1;" transform="translate(25,25) scale(0.5)" d="M99.001,19.428c-3.606,1.608-7.48,2.695-11.547,3.184c4.15-2.503,7.338-6.466,8.841-11.189 c-3.885,2.318-8.187,4-12.768,4.908c-3.667-3.931-8.893-6.387-14.676-6.387c-11.104,0-20.107,9.054-20.107,20.223 c0,1.585,0.177,3.128,0.52,4.609c-16.71-0.845-31.525-8.895-41.442-21.131C6.092,16.633,5.1,20.107,5.1,23.813 c0,7.017,3.55,13.208,8.945,16.834c-3.296-0.104-6.397-1.014-9.106-2.529c-0.002,0.085-0.002,0.17-0.002,0.255 c0,9.799,6.931,17.972,16.129,19.831c-1.688,0.463-3.463,0.71-5.297,0.71c-1.296,0-2.555-0.127-3.783-0.363 c2.559,8.034,9.984,13.882,18.782,14.045c-6.881,5.424-15.551,8.657-24.971,8.657c-1.623,0-3.223-0.096-4.796-0.282 c8.898,5.738,19.467,9.087,30.82,9.087c36.982,0,57.206-30.817,57.206-57.543c0-0.877-0.02-1.748-0.059-2.617 C92.896,27.045,96.305,23.482,99.001,19.428z"></path>
+                  </svg>
+            </a></li>
+            
+            
+            <li><a href="https://github.com/ArthurChiao">
+                  <svg id="github" class="custom-icon" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 100 100" style="height: 30px; width: 30px;"><circle class="outer-shape" cx="50" cy="50" r="48" style="opacity: 1;"></circle>
+                  <path class="inner-shape" style="opacity: 1;" transform="translate(25,25) scale(0.5)" d="M50,1C22.938,1,1,22.938,1,50s21.938,49,49,49s49-21.938,49-49S77.062,1,50,1z M79.099,79.099 c-3.782,3.782-8.184,6.75-13.083,8.823c-1.245,0.526-2.509,0.989-3.79,1.387v-7.344c0-3.86-1.324-6.699-3.972-8.517 c1.659-0.16,3.182-0.383,4.57-0.67c1.388-0.287,2.855-0.702,4.402-1.245c1.547-0.543,2.935-1.189,4.163-1.938 c1.228-0.75,2.409-1.723,3.541-2.919s2.082-2.552,2.847-4.067s1.372-3.334,1.818-5.455c0.446-2.121,0.67-4.458,0.67-7.01 c0-4.945-1.611-9.155-4.833-12.633c1.467-3.828,1.308-7.991-0.478-12.489l-1.197-0.143c-0.829-0.096-2.321,0.255-4.474,1.053 c-2.153,0.798-4.57,2.105-7.249,3.924c-3.797-1.053-7.736-1.579-11.82-1.579c-4.115,0-8.039,0.526-11.772,1.579 c-1.69-1.149-3.294-2.097-4.809-2.847c-1.515-0.75-2.727-1.26-3.637-1.532c-0.909-0.271-1.754-0.439-2.536-0.503 c-0.782-0.064-1.284-0.079-1.507-0.048c-0.223,0.031-0.383,0.064-0.478,0.096c-1.787,4.53-1.946,8.694-0.478,12.489 c-3.222,3.477-4.833,7.688-4.833,12.633c0,2.552,0.223,4.889,0.67,7.01c0.447,2.121,1.053,3.94,1.818,5.455 c0.765,1.515,1.715,2.871,2.847,4.067s2.313,2.169,3.541,2.919c1.228,0.751,2.616,1.396,4.163,1.938 c1.547,0.543,3.014,0.957,4.402,1.245c1.388,0.287,2.911,0.511,4.57,0.67c-2.616,1.787-3.924,4.626-3.924,8.517v7.487 c-1.445-0.43-2.869-0.938-4.268-1.53c-4.899-2.073-9.301-5.041-13.083-8.823c-3.782-3.782-6.75-8.184-8.823-13.083 C9.934,60.948,8.847,55.56,8.847,50s1.087-10.948,3.231-16.016c2.073-4.899,5.041-9.301,8.823-13.083s8.184-6.75,13.083-8.823 C39.052,9.934,44.44,8.847,50,8.847s10.948,1.087,16.016,3.231c4.9,2.073,9.301,5.041,13.083,8.823 c3.782,3.782,6.75,8.184,8.823,13.083c2.143,5.069,3.23,10.457,3.23,16.016s-1.087,10.948-3.231,16.016 C85.848,70.915,82.88,75.317,79.099,79.099L79.099,79.099z"></path>
+                  </svg>
+            </a></li>
+             
+            
+            <li><a href="mailto:arthurchiao@hotmail.com">
+                  <svg id="mail" class="custom-icon" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 100 100" style="height: 30px; width: 30px;"><circle class="outer-shape" cx="50" cy="50" r="48" style="opacity: 1;"></circle>
+                  <path class="inner-shape" style="opacity: 1;" transform="translate(25,25) scale(0.5)" d="M50,1C22.938,1,1,22.938,1,50s21.938,49,49,49s49-21.938,49-49S77.062,1,50,1z M25.5,25.5h49 c0.874,0,1.723,0.188,2.502,0.542L50,57.544L22.998,26.041C23.777,25.687,24.626,25.499,25.5,25.5L25.5,25.5z M19.375,68.375v-36.75 c0-0.128,0.005-0.256,0.014-0.383l17.96,20.953L19.587,69.958C19.448,69.447,19.376,68.916,19.375,68.375L19.375,68.375z M74.5,74.5 h-49c-0.541,0-1.072-0.073-1.583-0.212l17.429-17.429L50,66.956l8.653-10.096l17.429,17.429C75.572,74.427,75.041,74.5,74.5,74.5 L74.5,74.5z M80.625,68.375c0,0.541-0.073,1.072-0.211,1.583L62.652,52.195l17.96-20.953c0.008,0.127,0.014,0.255,0.014,0.383 L80.625,68.375L80.625,68.375z"></path>
+                  </svg>
+            </a></li>
+            
+         </ul>
+      </div>
+   </div>
+</div><!-- end .footer -->
+
+  <!-- Add jQuery and other scripts -->
+<script src="./[译] Linux 异步 I_O 框架 io_uring：基本原理、程序示例与性能压测（2020）_files/jquery.min.js.下载"></script>
+<script>window.jQuery || document.write('<script src=""><\/script>')</script>
+<script src="./[译] Linux 异步 I_O 框架 io_uring：基本原理、程序示例与性能压测（2020）_files/dropcap.min.js.下载"></script>
+<script src="./[译] Linux 异步 I_O 框架 io_uring：基本原理、程序示例与性能压测（2020）_files/responsive-nav.min.js.下载"></script>
+<script src="./[译] Linux 异步 I_O 框架 io_uring：基本原理、程序示例与性能压测（2020）_files/scripts.js.下载"></script>
+
+
+
+
+<bookmark-sidebar-utbcxnmu3ub id="redeviation-bs-sidebar" class="notranslate" aria-hidden="true" data-theme="default" data-pos="left"><template shadowrootmode="closed"><iframe style="margin:0;padding: 0;border: none;width: 100%;height: 100%;"></iframe></template></bookmark-sidebar-utbcxnmu3ub><div id="redeviation-bs-indicator" data-theme="default" class="redeviation-bs-fullHeight redeviation-bs-visible" data-pos="left" style="height: 100%; top: 0%;"><div><span></span></div></div></body></html>
